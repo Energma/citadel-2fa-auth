@@ -64,36 +64,44 @@ class _ProfileTab extends ConsumerWidget {
     final profiles = ref.watch(profileListProvider);
 
     return profiles.when(
-      data: (list) => list.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.person_outline,
-                      size: 48,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withAlpha(60)),
-                  const SizedBox(height: 12),
-                  Text('No profiles',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withAlpha(100),
-                          )),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
+      data: (list) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
                     onPressed: () => _showProfileDialog(context, ref, null),
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text('Add Profile'),
                   ),
-                ],
+                ),
               ),
-            )
-          : Column(
-              children: [
+              if (list.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.person_outline,
+                            size: 48,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withAlpha(60)),
+                        const SizedBox(height: 12),
+                        Text('No profiles',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withAlpha(100),
+                                )),
+                      ],
+                    ),
+                  ),
+                )
+              else
                 Expanded(
                   child: ReorderableListView.builder(
                     padding: const EdgeInsets.all(16),
@@ -128,20 +136,8 @@ class _ProfileTab extends ConsumerWidget {
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () =>
-                          _showProfileDialog(context, ref, null),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add Profile'),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ],
+          ),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
     );
@@ -292,46 +288,51 @@ class _GroupTab extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return groups.when(
-      data: (list) => list.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.folder_outlined,
-                      size: 48,
-                      color: theme.colorScheme.onSurface.withAlpha(60)),
-                  const SizedBox(height: 12),
-                  Text(
-                    'No groups',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color:
-                          theme.colorScheme.onSurface.withAlpha(100),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 48),
-                    child: Text(
-                      'Organize tokens into categories',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color:
-                            theme.colorScheme.onSurface.withAlpha(80),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: () =>
-                        _showGroupDialog(context, ref, null),
+      data: (list) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _showGroupDialog(context, ref, null),
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text('Add Group'),
                   ),
-                ],
+                ),
               ),
-            )
-          : Column(
-              children: [
+              if (list.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.folder_outlined,
+                            size: 48,
+                            color: theme.colorScheme.onSurface.withAlpha(60)),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No groups',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: theme.colorScheme.onSurface.withAlpha(100),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 48),
+                          child: Text(
+                            'Organize tokens into categories',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface.withAlpha(80),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
                 Expanded(
                   child: ReorderableListView.builder(
                     padding: const EdgeInsets.all(16),
@@ -369,20 +370,8 @@ class _GroupTab extends ConsumerWidget {
                     },
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () =>
-                          _showGroupDialog(context, ref, null),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add Group'),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ],
+          ),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
     );
