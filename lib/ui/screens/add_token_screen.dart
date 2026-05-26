@@ -187,9 +187,33 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                       TextField(
                         controller: _uriController,
                         maxLines: 3,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
+                          labelText: 'otpauth:// URI',
                           hintText:
                               'otpauth://totp/Example:user@email.com?secret=...',
+                          prefixIcon: const Icon(Icons.link),
+                          filled: true,
+                          fillColor: theme.colorScheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.outline.withAlpha(80),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.outline.withAlpha(60),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                          floatingLabelBehavior: FloatingLabelBehavior.auto,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -228,25 +252,94 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
         children: [
           TextField(
             controller: _issuerController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Service / Issuer',
               hintText: 'e.g. GitHub, Google, AWS',
+              prefixIcon: const Icon(Icons.business),
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(60),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           TextField(
             controller: _accountController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Account *',
               hintText: 'e.g. user@email.com',
+              prefixIcon: const Icon(Icons.person_outline),
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(60),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           TextField(
             controller: _secretController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Secret Key (Base32) *',
               hintText: 'e.g. JBSWY3DPEHPK3PXP',
+              prefixIcon: const Icon(Icons.key_outlined),
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(60),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
             ),
           ),
           const SizedBox(height: 16),

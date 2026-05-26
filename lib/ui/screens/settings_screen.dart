@@ -331,6 +331,7 @@ class SettingsScreen extends ConsumerWidget {
   void _showEncryptedExportDialog(BuildContext context, WidgetRef ref) {
     final passwordController = TextEditingController();
     final confirmController = TextEditingController();
+    final theme = Theme.of(context);
 
     showDialog(
       context: context,
@@ -344,18 +345,64 @@ class SettingsScreen extends ConsumerWidget {
             TextField(
               controller: passwordController,
               obscureText: true,
-              decoration: const InputDecoration(
-                hintText: 'Export password',
-                prefixIcon: Icon(Icons.lock_outline),
+              decoration: InputDecoration(
+                labelText: 'Export Password',
+                hintText: 'Create a password',
+                prefixIcon: const Icon(Icons.lock_outline),
+                filled: true,
+                fillColor: theme.colorScheme.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(100),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(80),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                floatingLabelBehavior: FloatingLabelBehavior.auto,
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: confirmController,
               obscureText: true,
-              decoration: const InputDecoration(
-                hintText: 'Confirm password',
-                prefixIcon: Icon(Icons.lock_outline),
+              decoration: InputDecoration(
+                labelText: 'Confirm Password',
+                hintText: 'Re-enter the password',
+                prefixIcon: const Icon(Icons.lock_outline),
+                filled: true,
+                fillColor: theme.colorScheme.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(100),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(80),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                floatingLabelBehavior: FloatingLabelBehavior.auto,
               ),
             ),
           ],
@@ -676,6 +723,7 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
   Future<String?> _promptPassword(BuildContext context, String title) async {
     final controller = TextEditingController();
+    final theme = Theme.of(context);
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -684,9 +732,32 @@ class _PinTileState extends ConsumerState<_PinTile> {
           controller: controller,
           obscureText: true,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Master password',
-            prefixIcon: Icon(Icons.lock_outline),
+          decoration: InputDecoration(
+            labelText: 'Master Password',
+            hintText: 'Enter your password',
+            prefixIcon: const Icon(Icons.lock_outline),
+            filled: true,
+            fillColor: theme.colorScheme.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(100),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(80),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            floatingLabelBehavior: FloatingLabelBehavior.auto,
           ),
         ),
         actions: [

@@ -142,24 +142,68 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                         obscureText: _obscure,
                         autofocus: true,
                         decoration: InputDecoration(
-                          labelText: 'Master password',
-                          hintText: 'Enter a strong password',
+                          labelText: 'Master Password',
+                          hintText: 'Min. 8 characters',
                           prefixIcon: const Icon(Icons.lock_outline),
                           suffixIcon: IconButton(
                             icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
                             onPressed: () => setState(() => _obscure = !_obscure),
                           ),
+                          filled: true,
+                          fillColor: theme.colorScheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.outline.withAlpha(100),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.outline.withAlpha(80),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                          floatingLabelBehavior: FloatingLabelBehavior.auto,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       TextField(
                         controller: _confirmController,
                         obscureText: _obscure,
                         onSubmitted: (_) => _createVault(),
-                        decoration: const InputDecoration(
-                          labelText: 'Confirm password',
+                        decoration: InputDecoration(
+                          labelText: 'Confirm Password',
                           hintText: 'Re-enter your password',
-                          prefixIcon: Icon(Icons.lock_outline),
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          filled: true,
+                          fillColor: theme.colorScheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.outline.withAlpha(100),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.outline.withAlpha(80),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: theme.colorScheme.primary,
+                              width: 2,
+                            ),
+                          ),
+                          floatingLabelBehavior: FloatingLabelBehavior.auto,
                         ),
                       ),
                       if (_error != null) ...[

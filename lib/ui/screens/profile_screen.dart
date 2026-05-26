@@ -174,6 +174,7 @@ class _ProfileTab extends ConsumerWidget {
         TextEditingController(text: existing?.name ?? '');
     int selectedColor =
         existing?.colorValue ?? Palette.profileColors[0].toARGB32();
+    final theme = Theme.of(context);
 
     showDialog(
       context: context,
@@ -186,8 +187,31 @@ class _ProfileTab extends ConsumerWidget {
               TextField(
                 controller: nameController,
                 decoration: InputDecoration(
-                  hintText: 'Profile name',
+                  labelText: 'Profile Name',
+                  hintText: 'e.g. Personal, Work',
                   prefixIcon: const Icon(Icons.person_outline),
+                  filled: true,
+                  fillColor: theme.colorScheme.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.outline.withAlpha(80),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.outline.withAlpha(60),
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: theme.colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
+                  floatingLabelBehavior: FloatingLabelBehavior.auto,
                 ),
                 autofocus: true,
               ),
@@ -485,6 +509,7 @@ class _GroupTab extends ConsumerWidget {
       TokenGroup? existing, String profileId) {
     final nameController =
         TextEditingController(text: existing?.name ?? '');
+    final theme = Theme.of(context);
 
     showDialog(
       context: context,
@@ -493,8 +518,31 @@ class _GroupTab extends ConsumerWidget {
         content: TextField(
           controller: nameController,
           decoration: InputDecoration(
-            hintText: 'Group name',
+            labelText: 'Group Name',
+            hintText: 'e.g. Social, Banking, Dev',
             prefixIcon: const Icon(Icons.folder_outlined),
+            filled: true,
+            fillColor: theme.colorScheme.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(80),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(60),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            floatingLabelBehavior: FloatingLabelBehavior.auto,
           ),
           autofocus: true,
           textCapitalization: TextCapitalization.words,

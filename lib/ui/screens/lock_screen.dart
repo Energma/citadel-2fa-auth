@@ -64,18 +64,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     final password = _passwordController.text;
     if (password.isEmpty) return;
 
-    final keystore = ref.read(keystoreServiceProvider);
-    final pinEnabled = await keystore.isPinEnabled();
-
-    if (pinEnabled) {
-      setState(() {
-        _pendingPassphrase = password;
-        _showPinInput = true;
-        _error = null;
-      });
-    } else {
-      await _unlock(password);
-    }
+    await _unlock(password);
   }
 
   Future<void> _handlePinCompleted(String pin) async {
@@ -250,7 +239,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Enter your master password to unlock',
+            'Unlock your vault',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurface.withAlpha(153),
             ),
@@ -262,13 +251,36 @@ class _LockScreenState extends ConsumerState<LockScreen> {
             autofocus: true,
             onSubmitted: (_) => _handlePasswordSubmit(),
             decoration: InputDecoration(
-              hintText: 'Master password',
+              labelText: 'Master Password',
+              hintText: 'Enter your password',
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
                 icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
                 onPressed: () => setState(() => _obscure = !_obscure),
               ),
               errorText: _error,
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(100),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
             ),
           ),
           const SizedBox(height: 24),
