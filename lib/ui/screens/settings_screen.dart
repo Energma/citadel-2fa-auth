@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
@@ -84,10 +85,17 @@ class SettingsScreen extends ConsumerWidget {
           const ListTile(
             leading: Icon(Icons.privacy_tip),
             title: Text('Privacy Commitment'),
-            subtitle: Text(
-              'No telemetry. No analytics. No cloud dependency. '
-              'Export will NEVER be paywalled.',
-            ),
+            subtitle: Text('No telemetry. No cloud. No paywalls.'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('Privacy Policy'),
+            onTap: () => launchUrl(Uri.parse('https://www.energma.co/privacy-policy')),
+          ),
+          ListTile(
+            leading: const Icon(Icons.gavel),
+            title: const Text('Terms of Use'),
+            onTap: () => launchUrl(Uri.parse('https://www.energma.co/terms-of-use')),
           ),
 
           _sectionHeader(theme, 'Danger Zone'),

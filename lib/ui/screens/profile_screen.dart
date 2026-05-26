@@ -172,16 +172,24 @@ class _ProfileTab extends ConsumerWidget {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(existing == null ? 'New Profile' : 'Edit Profile'),
+          title: Text(existing == null ? 'Add Profile' : 'Edit Profile'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(
+                  hintText: 'Profile name',
+                  prefixIcon: const Icon(Icons.person_outline),
+                ),
                 autofocus: true,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
+              Text(
+                'Color',
+                style: Theme.of(ctx).textTheme.labelSmall,
+              ),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -191,8 +199,8 @@ class _ProfileTab extends ConsumerWidget {
                     onTap: () => setDialogState(
                         () => selectedColor = c.toARGB32()),
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: c,
                         shape: BoxShape.circle,
@@ -201,7 +209,7 @@ class _ProfileTab extends ConsumerWidget {
                                 color: Theme.of(ctx)
                                     .colorScheme
                                     .onSurface,
-                                width: 3)
+                                width: 2)
                             : null,
                       ),
                     ),
@@ -235,7 +243,7 @@ class _ProfileTab extends ConsumerWidget {
                 ref.invalidate(profileListProvider);
                 if (ctx.mounted) Navigator.pop(ctx);
               },
-              child: Text(existing == null ? 'Create' : 'Save'),
+              child: Text(existing == null ? 'Add' : 'Save'),
             ),
           ],
         ),
@@ -304,7 +312,7 @@ class _GroupTab extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 48),
                     child: Text(
-                      'Groups let you organize tokens into collapsible categories within each tab.',
+                      'Organize tokens into categories',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color:
@@ -404,12 +412,12 @@ class _GroupTab extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'New Group' : 'Rename Group'),
+        title: Text(existing == null ? 'Add Group' : 'Rename Group'),
         content: TextField(
           controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'Group name',
-            hintText: 'e.g. Social, Banking, Dev Tools',
+          decoration: InputDecoration(
+            hintText: 'Group name',
+            prefixIcon: const Icon(Icons.folder_outlined),
           ),
           autofocus: true,
           textCapitalization: TextCapitalization.words,
@@ -433,7 +441,7 @@ class _GroupTab extends ConsumerWidget {
               ref.invalidate(groupListProvider);
               if (ctx.mounted) Navigator.pop(ctx);
             },
-            child: Text(existing == null ? 'Create' : 'Save'),
+            child: Text(existing == null ? 'Add' : 'Save'),
           ),
         ],
       ),
