@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import '../../core/models/profile.dart';
 import '../../core/providers.dart';
 import '../theme/palette.dart';
+import '../widgets/master_password_dialog.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -255,24 +256,33 @@ class _ProfileTab extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: () {
                 final name = nameController.text.trim();
                 if (name.isEmpty) return;
 
-                final repo = ref.read(profileRepositoryProvider);
-                if (existing != null) {
-                  await repo.update(existing.copyWith(
-                    name: name,
-                    colorValue: selectedColor,
-                  ));
-                } else {
-                  await repo.add(Profile(
-                    name: name,
-                    colorValue: selectedColor,
-                  ));
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  showDialog(
+                    context: context,
+                    builder: (pwdCtx) => MasterPasswordDialog(
+                      onConfirm: () async {
+                        final repo = ref.read(profileRepositoryProvider);
+                        if (existing != null) {
+                          await repo.update(existing.copyWith(
+                            name: name,
+                            colorValue: selectedColor,
+                          ));
+                        } else {
+                          await repo.add(Profile(
+                            name: name,
+                            colorValue: selectedColor,
+                          ));
+                        }
+                        ref.invalidate(profileListProvider);
+                      },
+                    ),
+                  );
                 }
-                ref.invalidate(profileListProvider);
-                if (ctx.mounted) Navigator.pop(ctx);
               },
               child: Text(existing == null ? 'Add' : 'Save'),
             ),
@@ -304,9 +314,16 @@ class _ProfileTab extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true) {
-      await ref.read(profileRepositoryProvider).delete(profile.id);
-      ref.invalidate(profileListProvider);
+    if (confirmed == true && context.mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => MasterPasswordDialog(
+          onConfirm: () async {
+            await ref.read(profileRepositoryProvider).delete(profile.id);
+            ref.invalidate(profileListProvider);
+          },
+        ),
+      );
     }
   }
 }
@@ -553,21 +570,30 @@ class _GroupTab extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
 
-              final repo = ref.read(profileRepositoryProvider);
-              if (existing != null) {
-                await repo.updateGroup(existing.copyWith(name: name));
-              } else {
-                await repo.addGroup(TokenGroup(
-                  profileId: profileId,
-                  name: name,
-                ));
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                showDialog(
+                  context: context,
+                  builder: (pwdCtx) => MasterPasswordDialog(
+                    onConfirm: () async {
+                      final repo = ref.read(profileRepositoryProvider);
+                      if (existing != null) {
+                        await repo.updateGroup(existing.copyWith(name: name));
+                      } else {
+                        await repo.addGroup(TokenGroup(
+                          profileId: profileId,
+                          name: name,
+                        ));
+                      }
+                      ref.invalidate(groupListProvider);
+                    },
+                  ),
+                );
               }
-              ref.invalidate(groupListProvider);
-              if (ctx.mounted) Navigator.pop(ctx);
             },
             child: Text(existing == null ? 'Add' : 'Save'),
           ),
@@ -598,9 +624,16 @@ class _GroupTab extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true) {
-      await ref.read(profileRepositoryProvider).deleteGroup(group.id);
-      ref.invalidate(groupListProvider);
+    if (confirmed == true && context.mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => MasterPasswordDialog(
+          onConfirm: () async {
+            await ref.read(profileRepositoryProvider).deleteGroup(group.id);
+            ref.invalidate(groupListProvider);
+          },
+        ),
+      );
     }
   }
 }
