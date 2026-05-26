@@ -14,6 +14,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  String? _selectedProfileIdForGroups;
 
   @override
   void initState() {
@@ -45,8 +46,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _ProfileTab(ref: ref),
-          _GroupTab(ref: ref),
+          _ProfileTab(ref: ref, onProfileSelected: (profileId) {
+            setState(() => _selectedProfileIdForGroups = profileId);
+          }),
+          _GroupTab(
+            ref: ref,
+            selectedProfileId: _selectedProfileIdForGroups,
+            onProfileSelected: (profileId) {
+              setState(() => _selectedProfileIdForGroups = profileId);
+            },
+          ),
         ],
       ),
     );
@@ -57,7 +66,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
 class _ProfileTab extends ConsumerWidget {
   final WidgetRef ref;
-  const _ProfileTab({required this.ref});
+  final ValueChanged<String>? onProfileSelected;
+  const _ProfileTab({required this.ref, this.onProfileSelected});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -280,100 +290,177 @@ class _ProfileTab extends ConsumerWidget {
 
 class _GroupTab extends ConsumerWidget {
   final WidgetRef ref;
-  const _GroupTab({required this.ref});
+  final String? selectedProfileId;
+  final ValueChanged<String>? onProfileSelected;
+  const _GroupTab({
+    required this.ref,
+    this.selectedProfileId,
+    this.onProfileSelected,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final groups = ref.watch(groupListProvider);
+    final profiles = ref.watch(profileListProvider);
     final theme = Theme.of(context);
 
-    return groups.when(
-      data: (list) => Column(
-            children: [
+    return profiles.when(
+      data: (profileList) {
+        final currentProfileId = selectedProfileId ?? profileList.firstOrNull?.id;
+        if (currentProfileId == null) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.folder_outlined,
+                    size: 48,
+                    color: theme.colorScheme.onSurface.withAlpha(60)),
+                const SizedBox(height: 12),
+                Text('No profiles',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurface.withAlpha(100),
+                    )),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            if (profileList.length > 1)
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => _showGroupDialog(context, ref, null),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add Group'),
-                  ),
+                child: DropdownButtonFormField<String>(
+                  value: currentProfileId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Profile'),
+                  items: profileList
+                      .map((p) => DropdownMenuItem(
+                            value: p.id,
+                            child: Row(
+                              children: [
+                                CircleAvatar(backgroundColor: p.color, radius: 6),
+                                const SizedBox(width: 8),
+                                Text(p.name),
+                              ],
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) onProfileSelected?.call(v);
+                  },
                 ),
               ),
-              if (list.isEmpty)
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.folder_outlined,
-                            size: 48,
-                            color: theme.colorScheme.onSurface.withAlpha(60)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No groups',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: theme.colorScheme.onSurface.withAlpha(100),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 48),
-                          child: Text(
-                            'Organize tokens into categories',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withAlpha(80),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                Expanded(
-                  child: ReorderableListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: list.length,
-                    onReorder: (old, newIdx) =>
-                        _reorderGroups(ref, list, old, newIdx),
-                    itemBuilder: (context, index) {
-                      final g = list[index];
-                      return Card(
-                        key: ValueKey(g.id),
-                        child: ListTile(
-                          leading: Icon(Icons.folder_rounded,
-                              color: theme.colorScheme.primary),
-                          title: Text(g.name),
-                          trailing: PopupMenuButton(
-                            itemBuilder: (_) => [
-                              const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('Rename')),
-                              const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Delete')),
-                            ],
-                            onSelected: (v) {
-                              if (v == 'edit') {
-                                _showGroupDialog(context, ref, g);
-                              }
-                              if (v == 'delete') {
-                                _deleteGroup(context, ref, g);
-                              }
-                            },
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
+            Expanded(
+              child: _buildGroupsList(
+                  context, ref, currentProfileId, theme, profileList),
+            ),
+          ],
+        );
+      },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+
+  Widget _buildGroupsList(BuildContext context, WidgetRef ref,
+      String profileId, ThemeData theme, List<Profile> profileList) {
+    final profile =
+        profileList.firstWhereOrNull((p) => p.id == profileId);
+    if (profile == null) return const SizedBox.shrink();
+
+    return FutureBuilder<List<TokenGroup>>(
+      future: ref.read(profileRepositoryProvider).getGroupsByProfile(profileId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final list = snapshot.data ?? [];
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () =>
+                      _showGroupDialog(context, ref, null, profileId),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add Group'),
+                ),
+              ),
+            ),
+            if (list.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.folder_outlined,
+                          size: 48,
+                          color: theme.colorScheme.onSurface.withAlpha(60)),
+                      const SizedBox(height: 12),
+                      Text('No groups in ${profile.name}',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color:
+                                theme.colorScheme.onSurface.withAlpha(100),
+                          )),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 48),
+                        child: Text(
+                          'Organize tokens into categories',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color:
+                                theme.colorScheme.onSurface.withAlpha(80),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ReorderableListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: list.length,
+                  onReorder: (old, newIdx) =>
+                      _reorderGroups(ref, list, old, newIdx),
+                  itemBuilder: (context, index) {
+                    final g = list[index];
+                    return Card(
+                      key: ValueKey(g.id),
+                      child: ListTile(
+                        leading: Icon(Icons.folder_rounded,
+                            color: theme.colorScheme.primary),
+                        title: Text(g.name),
+                        trailing: PopupMenuButton(
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                                value: 'edit', child: Text('Rename')),
+                            const PopupMenuItem(
+                                value: 'delete', child: Text('Delete')),
+                          ],
+                          onSelected: (v) {
+                            if (v == 'edit') {
+                              _showGroupDialog(context, ref, g, profileId);
+                            }
+                            if (v == 'delete') {
+                              _deleteGroup(context, ref, g);
+                            }
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -393,8 +480,8 @@ class _GroupTab extends ConsumerWidget {
     ref.invalidate(groupListProvider);
   }
 
-  void _showGroupDialog(
-      BuildContext context, WidgetRef ref, TokenGroup? existing) {
+  void _showGroupDialog(BuildContext context, WidgetRef ref,
+      TokenGroup? existing, String profileId) {
     final nameController =
         TextEditingController(text: existing?.name ?? '');
 
@@ -425,7 +512,10 @@ class _GroupTab extends ConsumerWidget {
               if (existing != null) {
                 await repo.updateGroup(existing.copyWith(name: name));
               } else {
-                await repo.addGroup(TokenGroup(name: name));
+                await repo.addGroup(TokenGroup(
+                  profileId: profileId,
+                  name: name,
+                ));
               }
               ref.invalidate(groupListProvider);
               if (ctx.mounted) Navigator.pop(ctx);

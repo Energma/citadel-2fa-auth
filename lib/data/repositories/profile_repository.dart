@@ -21,6 +21,9 @@ class ProfileRepository {
 
   Future<List<TokenGroup>> getAllGroups() => _db.getAllGroups();
 
+  Future<List<TokenGroup>> getGroupsByProfile(String profileId) =>
+      _db.getGroupsByProfile(profileId);
+
   Future<void> addGroup(TokenGroup group) => _db.insertGroup(group);
 
   Future<void> updateGroup(TokenGroup group) => _db.updateGroup(group);

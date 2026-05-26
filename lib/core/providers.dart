@@ -103,7 +103,11 @@ final profileListProvider = FutureProvider<List<Profile>>((ref) async {
 final groupListProvider = FutureProvider<List<TokenGroup>>((ref) async {
   final vault = ref.watch(vaultProvider);
   if (vault.status != VaultStatus.unlocked) return [];
-  return ref.read(profileRepositoryProvider).getAllGroups();
+
+  final activeProfileId = ref.watch(activeProfileIdProvider);
+  if (activeProfileId == null) return [];
+
+  return ref.read(profileRepositoryProvider).getGroupsByProfile(activeProfileId);
 });
 
 // --- Search ---

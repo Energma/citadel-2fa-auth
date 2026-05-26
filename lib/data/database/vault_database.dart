@@ -6,7 +6,7 @@ import '../../core/models/profile.dart';
 
 class VaultDatabase {
   static const String _dbName = 'citadel_vault.db';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
 
   Database? _database;
 
@@ -70,8 +70,10 @@ class VaultDatabase {
     await db.execute('''
       CREATE TABLE groups (
         id TEXT PRIMARY KEY,
+        profileId TEXT NOT NULL,
         name TEXT NOT NULL,
-        sortOrder INTEGER NOT NULL DEFAULT 0
+        sortOrder INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (profileId) REFERENCES profiles(id) ON DELETE CASCADE
       )
     ''');
 
@@ -127,6 +129,30 @@ class VaultDatabase {
       ''');
       await db.execute(
           'INSERT INTO groups_new (id, name, sortOrder) SELECT id, name, sortOrder FROM groups');
+      await db.execute('DROP TABLE groups');
+      await db.execute('ALTER TABLE groups_new RENAME TO groups');
+    }
+
+    if (oldVersion < 3) {
+      // Make groups profile-specific (add profileId back)
+      await db.execute('''
+        CREATE TABLE groups_new (
+          id TEXT PRIMARY KEY,
+          profileId TEXT NOT NULL,
+          name TEXT NOT NULL,
+          sortOrder INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (profileId) REFERENCES profiles(id) ON DELETE CASCADE
+        )
+      ''');
+      // Assign all groups to the first profile (Personal)
+      final profiles = await db.query('profiles', orderBy: 'sortOrder ASC');
+      if (profiles.isNotEmpty) {
+        final firstProfileId = profiles.first['id'] as String;
+        await db.execute(
+          'INSERT INTO groups_new (id, profileId, name, sortOrder) SELECT id, ?, name, sortOrder FROM groups',
+          [firstProfileId],
+        );
+      }
       await db.execute('DROP TABLE groups');
       await db.execute('ALTER TABLE groups_new RENAME TO groups');
     }
@@ -188,6 +214,16 @@ class VaultDatabase {
 
   Future<List<TokenGroup>> getAllGroups() async {
     final maps = await _db.query('groups', orderBy: 'sortOrder ASC');
+    return maps.map((m) => TokenGroup.fromMap(m)).toList();
+  }
+
+  Future<List<TokenGroup>> getGroupsByProfile(String profileId) async {
+    final maps = await _db.query(
+      'groups',
+      where: 'profileId = ?',
+      whereArgs: [profileId],
+      orderBy: 'sortOrder ASC',
+    );
     return maps.map((m) => TokenGroup.fromMap(m)).toList();
   }
 

@@ -62,11 +62,13 @@ class Profile {
 
 class TokenGroup {
   final String id;
+  final String profileId;
   final String name;
   final int sortOrder;
 
   TokenGroup({
     String? id,
+    required this.profileId,
     required this.name,
     this.sortOrder = 0,
   }) : id = id ?? const Uuid().v4();
@@ -74,6 +76,7 @@ class TokenGroup {
   TokenGroup copyWith({String? name, int? sortOrder}) {
     return TokenGroup(
       id: id,
+      profileId: profileId,
       name: name ?? this.name,
       sortOrder: sortOrder ?? this.sortOrder,
     );
@@ -82,6 +85,7 @@ class TokenGroup {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'profileId': profileId,
       'name': name,
       'sortOrder': sortOrder,
     };
@@ -90,6 +94,7 @@ class TokenGroup {
   factory TokenGroup.fromMap(Map<String, dynamic> map) {
     return TokenGroup(
       id: map['id'] as String,
+      profileId: map['profileId'] as String,
       name: map['name'] as String,
       sortOrder: map['sortOrder'] as int,
     );
