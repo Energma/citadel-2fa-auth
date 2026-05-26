@@ -16,6 +16,7 @@ class KeystoreService {
   static const _themeModeKey = 'citadel_theme_mode';
   static const _pinHashKey = 'citadel_pin_hash';
   static const _pinEnabledKey = 'citadel_pin_enabled';
+  static const _masterPasswordKey = 'citadel_master_password';
 
   /// Store the derived vault key in secure storage.
   Future<void> storeVaultKey(Uint8List key) async {
@@ -99,6 +100,21 @@ class KeystoreService {
   /// Get stored theme mode (default: 'system').
   Future<String> getThemeMode() async {
     return await _storage.read(key: _themeModeKey) ?? 'system';
+  }
+
+  /// Store the master password for PIN-only login.
+  Future<void> storeMasterPassword(String password) async {
+    await _storage.write(key: _masterPasswordKey, value: password);
+  }
+
+  /// Retrieve the stored master password for PIN-only login.
+  Future<String?> getMasterPassword() async {
+    return await _storage.read(key: _masterPasswordKey);
+  }
+
+  /// Clear the stored master password.
+  Future<void> clearMasterPassword() async {
+    await _storage.delete(key: _masterPasswordKey);
   }
 
   /// Clear all stored keys (full reset).

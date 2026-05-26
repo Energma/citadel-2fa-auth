@@ -21,7 +21,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   bool _loading = false;
   String? _error;
   bool _showPinInput = false;
-  String? _pendingPassphrase;
+  bool _pinEnabled = false;
   String? _pinError;
   int _pinAttempts = 0;
   bool _pinLocked = false;
@@ -30,7 +30,19 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   @override
   void initState() {
     super.initState();
+    _initializePinState();
     _tryBiometric();
+  }
+
+  Future<void> _initializePinState() async {
+    final keystore = ref.read(keystoreServiceProvider);
+    final pinEnabled = await keystore.isPinEnabled();
+    setState(() {
+      _pinEnabled = pinEnabled;
+      if (pinEnabled) {
+        _showPinInput = true; // Show PIN directly if enabled
+      }
+    });
   }
 
   @override
@@ -68,15 +80,13 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   Future<void> _handlePinCompleted(String pin) async {
-    if (_pendingPassphrase == null) return;
-
     // Check lockout status
     if (_lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!)) {
       setState(() => _pinError = 'Too many attempts. Try again in 30 seconds.');
       return;
     }
 
-    // Validate PIN hash first (fast check)
+    // Validate PIN hash
     final keystore = ref.read(keystoreServiceProvider);
     final storedHash = await keystore.getPinHash();
     final enteredHash = sha256.convert(utf8.encode(pin)).toString();
@@ -95,17 +105,21 @@ class _LockScreenState extends ConsumerState<LockScreen> {
       return;
     }
 
-    // PIN valid, combine with password for vault unlock
-    final fullPassphrase = '$_pendingPassphrase$pin';
+    // PIN valid - retrieve stored master password and combine for vault unlock
+    final masterPassword = await keystore.getMasterPassword();
+    if (masterPassword == null) {
+      setState(() => _pinError = 'Error: Master password not found');
+      return;
+    }
+
+    final fullPassphrase = '$masterPassword$pin';
     final success = await ref.read(vaultProvider.notifier).unlock(fullPassphrase);
 
     if (mounted) {
       if (!success) {
         setState(() {
           _pinError = 'Failed to unlock vault';
-          _showPinInput = false;
-          _pendingPassphrase = null;
-          _error = 'Wrong password or PIN combination';
+          _error = 'Error unlocking vault';
           _pinAttempts = 0;
           _pinLocked = false;
           _lockoutUntil = null;

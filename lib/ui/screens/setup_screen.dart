@@ -66,6 +66,9 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
     if (success) {
       final keystore = ref.read(keystoreServiceProvider);
 
+      // Store master password for PIN-only login
+      await keystore.storeMasterPassword(password);
+
       // Store PIN hash if PIN was set
       if (pin != null) {
         final pinHash = sha256.convert(utf8.encode(pin)).toString();

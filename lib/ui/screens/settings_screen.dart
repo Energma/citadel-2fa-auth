@@ -624,6 +624,9 @@ class _PinTileState extends ConsumerState<_PinTile> {
       final newPassphrase = '$password$pin';
       await db.rekey(newPassphrase);
 
+      // Store master password for PIN-only login
+      await keystore.storeMasterPassword(password);
+
       // Store PIN hash
       final pinHash = sha256.convert(utf8.encode(pin)).toString();
       await keystore.storePinHash(pinHash);
@@ -667,6 +670,9 @@ class _PinTileState extends ConsumerState<_PinTile> {
       final newPassphrase = '$password$newPin';
       await db.rekey(newPassphrase);
 
+      // Store master password for PIN-only login
+      await keystore.storeMasterPassword(password);
+
       final pinHash = sha256.convert(utf8.encode(newPin)).toString();
       await keystore.storePinHash(pinHash);
 
@@ -698,6 +704,10 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
     try {
       await db.rekey(password);
+
+      // Store master password for PIN-only login (even when PIN is removed)
+      await keystore.storeMasterPassword(password);
+
       await keystore.clearPin();
 
       final bioEnabled = await keystore.isBiometricEnabled();
