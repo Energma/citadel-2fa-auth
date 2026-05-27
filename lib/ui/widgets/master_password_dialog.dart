@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class MasterPasswordDialog extends StatefulWidget {
-  final VoidCallback onConfirm;
+  final Future<void> Function() onConfirm;
   final VoidCallback? onCancel;
   final String title;
   final String subtitle;
