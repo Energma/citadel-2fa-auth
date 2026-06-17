@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Platform-secure key storage using Android Keystore / iOS Keychain.
@@ -115,6 +116,21 @@ class KeystoreService {
   /// Clear the stored master password.
   Future<void> clearMasterPassword() async {
     await _storage.delete(key: _masterPasswordKey);
+  }
+
+  /// Verify a candidate against the stored master password.
+  /// Returns false if no master password is stored.
+  Future<bool> verifyMasterPassword(String candidate) async {
+    final stored = await _storage.read(key: _masterPasswordKey);
+    if (stored == null) return false;
+    // Compare fixed-length digests so the comparison is constant-time.
+    final a = sha256.convert(utf8.encode(stored)).bytes;
+    final b = sha256.convert(utf8.encode(candidate)).bytes;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
   }
 
   /// Clear all stored keys (full reset).

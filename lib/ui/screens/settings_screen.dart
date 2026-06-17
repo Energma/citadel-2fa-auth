@@ -75,7 +75,12 @@ class SettingsScreen extends ConsumerWidget {
               height: 24,
             ),
             title: const Text('Citadel Auth'),
-            subtitle: const Text('v0.1.0 - Privacy-first 2FA'),
+            subtitle: Text(
+              ref.watch(appVersionProvider).maybeWhen(
+                    data: (v) => 'v$v - Privacy-first 2FA',
+                    orElse: () => 'Privacy-first 2FA',
+                  ),
+            ),
           ),
           const ListTile(
             leading: Icon(Icons.code),
@@ -249,8 +254,31 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if (result == null || result.files.isEmpty) return;
-    final file = File(result.files.single.path!);
-    final content = await file.readAsString();
+    final picked = result.files.single;
+    final file = File(picked.path!);
+    final rawContent = await file.readAsString();
+
+    // Encrypted backups are stored as `base64(salt)\n<ciphertext>` and must be
+    // decrypted with the export password before the token JSON can be parsed.
+    String content = rawContent;
+    if (_looksEncrypted(picked.name, rawContent)) {
+      if (!context.mounted) return;
+      final password = await _promptImportPassword(context);
+      if (password == null || password.isEmpty) return;
+
+      try {
+        content = await _decryptExport(rawContent, password);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Incorrect password or corrupted backup file'),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     try {
       final tokens = ImportExport.importFromJson(content);
@@ -278,6 +306,100 @@ class SettingsScreen extends ConsumerWidget {
         );
       }
     }
+  }
+
+  /// Detects whether a picked file is a Citadel encrypted export rather than
+  /// plaintext JSON / otpauth URIs. Matches on the `.enc` extension or the
+  /// `base64(salt)\n<ciphertext>` shape produced by [_exportTokensEncrypted].
+  bool _looksEncrypted(String fileName, String content) {
+    if (fileName.toLowerCase().endsWith('.enc')) return true;
+
+    final trimmed = content.trimLeft();
+    // Plaintext exports start with a JSON object/array or an otpauth URI.
+    if (trimmed.startsWith('{') ||
+        trimmed.startsWith('[') ||
+        trimmed.startsWith('otpauth')) {
+      return false;
+    }
+
+    final newlineIdx = content.indexOf('\n');
+    if (newlineIdx <= 0) return false;
+    try {
+      // First line must be the base64-encoded salt (32 bytes).
+      final salt = base64.decode(content.substring(0, newlineIdx).trim());
+      return salt.length == 32;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Reverses [_exportTokensEncrypted]: parses the salt, derives the key from
+  /// [password], and returns the decrypted token JSON. Throws if the password
+  /// is wrong or the file is corrupted.
+  Future<String> _decryptExport(String content, String password) async {
+    final newlineIdx = content.indexOf('\n');
+    if (newlineIdx <= 0) {
+      throw const FormatException('Malformed encrypted backup');
+    }
+    final salt = base64.decode(content.substring(0, newlineIdx).trim());
+    final ciphertext = content.substring(newlineIdx + 1).trim();
+    final key = await VaultEncryption.deriveKey(password, salt);
+    return VaultEncryption.decryptString(ciphertext, key);
+  }
+
+  /// Prompts for the password used to encrypt an imported backup file.
+  Future<String?> _promptImportPassword(BuildContext context) {
+    final controller = TextEditingController();
+    final theme = Theme.of(context);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Encrypted Backup'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+          decoration: InputDecoration(
+            labelText: 'Export Password',
+            hintText: 'Password used to encrypt this file',
+            prefixIcon: const Icon(Icons.lock_outline),
+            filled: true,
+            fillColor: theme.colorScheme.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(100),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(80),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            floatingLabelBehavior: FloatingLabelBehavior.auto,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showExportDialog(BuildContext context, WidgetRef ref) {
@@ -620,6 +742,15 @@ class _PinTileState extends ConsumerState<_PinTile> {
     final password = await _promptPassword(context, 'Enter your master password to enable PIN');
     if (password == null || !mounted) return;
 
+    if (!await keystore.verifyMasterPassword(password)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect master password')),
+        );
+      }
+      return;
+    }
+
     try {
       final newPassphrase = '$password$pin';
       await db.rekey(newPassphrase);
@@ -666,6 +797,15 @@ class _PinTileState extends ConsumerState<_PinTile> {
     final keystore = ref.read(keystoreServiceProvider);
     final db = ref.read(vaultDatabaseProvider);
 
+    if (!await keystore.verifyMasterPassword(password)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect master password')),
+        );
+      }
+      return;
+    }
+
     try {
       final newPassphrase = '$password$newPin';
       await db.rekey(newPassphrase);
@@ -701,6 +841,15 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
     final keystore = ref.read(keystoreServiceProvider);
     final db = ref.read(vaultDatabaseProvider);
+
+    if (!await keystore.verifyMasterPassword(password)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect master password')),
+        );
+      }
+      return;
+    }
 
     try {
       await db.rekey(password);

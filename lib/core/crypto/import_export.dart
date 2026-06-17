@@ -73,6 +73,7 @@ class ImportExport {
         digits: m['digits'] as int? ?? 6,
         period: m['period'] as int? ?? 30,
         counter: m['counter'] as int? ?? 0,
+        tags: (m['tags'] as List?)?.cast<String>() ?? const [],
       );
     }).toList();
   }

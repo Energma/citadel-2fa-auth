@@ -515,20 +515,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Future<void> _reorderTokens(
-      List<dynamic> tokenList, int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex--;
-    final item = tokenList.removeAt(oldIndex);
-    tokenList.insert(newIndex, item);
-
-    final orders = <String, int>{};
-    for (var i = 0; i < tokenList.length; i++) {
-      orders[tokenList[i].id] = i;
-    }
-    await ref.read(tokenRepositoryProvider).updateSortOrders(orders);
-    ref.invalidate(tokenListProvider);
-  }
-
   void _showMoveDialog(Token token) async {
     final profiles = _profiles;
     final groups = ref.read(groupListProvider).valueOrNull ?? [];

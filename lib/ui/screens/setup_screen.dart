@@ -5,7 +5,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
-import '../../ui/theme/palette.dart';
 import 'pin_setup_screen.dart';
 
 class SetupScreen extends ConsumerStatefulWidget {
@@ -21,7 +20,6 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   bool _obscure = true;
   bool _loading = false;
   bool _enableBiometric = true;
-  bool _enablePin = false;
   String? _error;
 
   @override
@@ -44,15 +42,13 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       return;
     }
 
-    // If PIN enabled, prompt for PIN setup first
-    String? pin;
-    if (_enablePin && mounted) {
-      pin = await Navigator.push<String>(
-        context,
-        MaterialPageRoute(builder: (_) => const PinSetupScreen()),
-      );
-      if (pin == null) return; // User cancelled PIN setup
-    }
+    // PIN is mandatory — prompt for PIN setup before creating the vault
+    if (!mounted) return;
+    final pin = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const PinSetupScreen()),
+    );
+    if (pin == null) return; // User cancelled PIN setup — abort vault creation
 
     setState(() {
       _loading = true;
@@ -60,7 +56,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
     });
 
     // Combine password + PIN for vault passphrase
-    final passphrase = pin != null ? '$password$pin' : password;
+    final passphrase = '$password$pin';
     final success = await ref.read(vaultProvider.notifier).createVault(passphrase);
 
     if (success) {
@@ -69,11 +65,9 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       // Store master password for PIN-only login
       await keystore.storeMasterPassword(password);
 
-      // Store PIN hash if PIN was set
-      if (pin != null) {
-        final pinHash = sha256.convert(utf8.encode(pin)).toString();
-        await keystore.storePinHash(pinHash);
-      }
+      // Store PIN hash
+      final pinHash = sha256.convert(utf8.encode(pin)).toString();
+      await keystore.storePinHash(pinHash);
 
       // Setup biometric
       if (_enableBiometric) {
@@ -133,7 +127,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Set a master password. Everything stays encrypted on your device.',
+                        'Set a master password and a PIN. Everything stays encrypted on your device.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurface.withAlpha(153),
@@ -219,13 +213,6 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                         subtitle: const Text('Use fingerprint or face to unlock'),
                         value: _enableBiometric,
                         onChanged: (v) => setState(() => _enableBiometric = v),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      SwitchListTile(
-                        title: const Text('Enable PIN'),
-                        subtitle: const Text('Add a 6-digit PIN as extra security factor'),
-                        value: _enablePin,
-                        onChanged: (v) => setState(() => _enablePin = v),
                         contentPadding: EdgeInsets.zero,
                       ),
                       const SizedBox(height: 24),

@@ -21,10 +21,8 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   bool _loading = false;
   String? _error;
   bool _showPinInput = false;
-  bool _pinEnabled = false;
   String? _pinError;
   int _pinAttempts = 0;
-  bool _pinLocked = false;
   DateTime? _lockoutUntil;
 
   @override
@@ -38,7 +36,6 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     final keystore = ref.read(keystoreServiceProvider);
     final pinEnabled = await keystore.isPinEnabled();
     setState(() {
-      _pinEnabled = pinEnabled;
       if (pinEnabled) {
         _showPinInput = true; // Show PIN directly if enabled
       }
@@ -96,7 +93,6 @@ class _LockScreenState extends ConsumerState<LockScreen> {
       if (_pinAttempts >= 5) {
         setState(() {
           _lockoutUntil = DateTime.now().add(const Duration(seconds: 30));
-          _pinLocked = true;
           _pinError = 'Too many wrong attempts. Try again in 30 seconds.';
         });
       } else {
@@ -121,7 +117,6 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           _pinError = 'Failed to unlock vault';
           _error = 'Error unlocking vault';
           _pinAttempts = 0;
-          _pinLocked = false;
           _lockoutUntil = null;
         });
       }
@@ -135,6 +130,16 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     });
 
     final success = await ref.read(vaultProvider.notifier).unlock(passphrase);
+
+    if (success) {
+      // Without a PIN the unlock passphrase is the master password itself —
+      // persist it so vaults created before it was stored can still verify
+      // master-password confirmations.
+      final keystore = ref.read(keystoreServiceProvider);
+      if (!await keystore.isPinEnabled()) {
+        await keystore.storeMasterPassword(passphrase);
+      }
+    }
 
     if (mounted) {
       setState(() => _loading = false);

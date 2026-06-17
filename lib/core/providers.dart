@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../data/database/vault_database.dart';
 import '../data/repositories/token_repository.dart';
 import '../data/repositories/profile_repository.dart';
@@ -118,6 +119,13 @@ final searchResultsProvider = FutureProvider<List<Token>>((ref) async {
   final query = ref.watch(searchQueryProvider);
   if (query.isEmpty) return [];
   return ref.read(tokenRepositoryProvider).search(query);
+});
+
+// --- App version ---
+
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return info.version;
 });
 
 // --- Biometric ---
