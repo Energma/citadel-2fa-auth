@@ -1,0 +1,12 @@
+# Copy this file to android/key.properties and fill in your real values.
+# Generate a keystore with:
+#   keytool -genkey -v -keystore ~/citadel-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias citadel
+#
+# NEVER commit key.properties or the .jks file. Back them up securely —
+# losing the keystore means you can never update the app on the Play Store.
+
+storePassword=<your-keystore-password>
+keyPassword=<your-key-password>
+keyAlias=citadel
+storeFile=/absolute/path/to/citadel-release.jks
