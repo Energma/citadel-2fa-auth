@@ -1,4 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Privacy-first: this app never accesses the network. mobile_scanner's
+         bundled on-device ML Kit model (com.google.mlkit:barcode-scanning) works
+         fully offline, so we strip the INTERNET / ACCESS_NETWORK_STATE permissions
+         that its optional unbundled variant would otherwise merge in. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
     <application
         android:label="Citadel Auth"
         android:name="${applicationName}"
