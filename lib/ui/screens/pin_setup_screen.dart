@@ -30,7 +30,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       } else {
         setState(() {
           _firstPin = null;
-          _error = 'PINs do not match. Try again.';
+          _error = "Those PINs didn't match — start again from the top.";
         });
       }
     }
@@ -51,10 +51,11 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
           child: PinInput(
             onCompleted: _onPinEntered,
             error: _error,
-            title: _firstPin == null ? 'Create PIN' : 'Confirm PIN',
+            title: _firstPin == null ? 'Create your app PIN' : 'Confirm your PIN',
             subtitle: _firstPin == null
-                ? 'Choose a 6-digit PIN'
-                : 'Enter the same PIN again',
+                ? "Pick a 6-digit PIN for Citadel. This is separate from your "
+                    "phone's screen lock — you'll enter it to unlock the app."
+                : 'Re-enter the same 6 digits to confirm.',
           ),
         ),
       ),

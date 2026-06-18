@@ -14,12 +14,23 @@ class SetupScreen extends ConsumerStatefulWidget {
   ConsumerState<SetupScreen> createState() => _SetupScreenState();
 }
 
+/// How the user unlocks the vault after setup.
+enum UnlockMethod {
+  /// A 6-digit PIN unique to Citadel, mixed into the encryption key.
+  appPin,
+
+  /// The phone's own screen lock (PIN / pattern / biometric). No app PIN;
+  /// the encryption key is derived from the master password alone.
+  deviceLock,
+}
+
 class _SetupScreenState extends ConsumerState<SetupScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
   bool _enableBiometric = true;
+  UnlockMethod _method = UnlockMethod.appPin;
   String? _error;
 
   @override
@@ -42,38 +53,40 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       return;
     }
 
-    // PIN is mandatory — prompt for PIN setup before creating the vault
+    if (_method == UnlockMethod.appPin) {
+      await _createWithAppPin(password);
+    } else {
+      await _createWithDeviceLock(password);
+    }
+  }
+
+  /// App-PIN unlock: a 6-digit PIN is combined with the master password to form
+  /// the vault passphrase, so the PIN is a real factor in the encryption key.
+  Future<void> _createWithAppPin(String password) async {
     if (!mounted) return;
     final pin = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => const PinSetupScreen()),
     );
-    if (pin == null) return; // User cancelled PIN setup — abort vault creation
+    if (pin == null) return; // Cancelled PIN setup — abort vault creation
 
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    // Combine password + PIN for vault passphrase
     final passphrase = '$password$pin';
     final success = await ref.read(vaultProvider.notifier).createVault(passphrase);
 
     if (success) {
       final keystore = ref.read(keystoreServiceProvider);
-
-      // Store master password for PIN-only login
       await keystore.storeMasterPassword(password);
+      await keystore.storePinHash(sha256.convert(utf8.encode(pin)).toString());
 
-      // Store PIN hash
-      final pinHash = sha256.convert(utf8.encode(pin)).toString();
-      await keystore.storePinHash(pinHash);
-
-      // Setup biometric
+      // Optional biometric convenience on top of the PIN.
       if (_enableBiometric) {
         final biometric = ref.read(biometricServiceProvider);
-        final available = await biometric.isAvailable();
-        if (available) {
+        if (await biometric.isAvailable()) {
           await keystore.storeVaultKey(utf8.encode(passphrase));
           await keystore.setBiometricEnabled(true);
         }
@@ -82,10 +95,100 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
 
     if (mounted) {
       setState(() => _loading = false);
-      if (!success) {
-        setState(() => _error = 'Failed to create vault');
-      }
+      if (!success) setState(() => _error = 'Failed to create vault');
     }
+  }
+
+  /// Device-lock unlock: no app PIN. The phone's screen lock (PIN / pattern /
+  /// biometric) gates access; the vault key is derived from the master password
+  /// alone and unlocked via the stored vault key after device authentication.
+  Future<void> _createWithDeviceLock(String password) async {
+    final biometric = ref.read(biometricServiceProvider);
+    if (!await biometric.isAvailable()) {
+      if (mounted) {
+        setState(() => _error =
+            'No screen lock found on this phone. Set one up in your phone '
+            'settings, or choose a 6-digit app PIN instead.');
+      }
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final success = await ref.read(vaultProvider.notifier).createVault(password);
+
+    if (success) {
+      final keystore = ref.read(keystoreServiceProvider);
+      await keystore.storeMasterPassword(password);
+      // No PIN hash — pinEnabled stays false. The stored vault key lets the
+      // lock screen unlock after the device-credential prompt succeeds.
+      await keystore.storeVaultKey(utf8.encode(password));
+      await keystore.setBiometricEnabled(true);
+    }
+
+    if (mounted) {
+      setState(() => _loading = false);
+      if (!success) setState(() => _error = 'Failed to create vault');
+    }
+  }
+
+  Widget _buildMethodTile(
+    ThemeData theme, {
+    required UnlockMethod method,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = _method == method;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => _method = method),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.outline.withAlpha(80),
+            width: selected ? 2 : 1,
+          ),
+          color: selected ? theme.colorScheme.primary.withAlpha(20) : null,
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                color: selected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface.withAlpha(153)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurface.withAlpha(153))),
+                ],
+              ),
+            ),
+            Icon(
+              selected ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outline.withAlpha(120),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildFooterLink(String text, String url, ThemeData theme) {
@@ -207,14 +310,43 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                         const SizedBox(height: 12),
                         Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
                       ],
-                      const SizedBox(height: 16),
-                      SwitchListTile(
-                        title: const Text('Enable biometric unlock'),
-                        subtitle: const Text('Use fingerprint or face to unlock'),
-                        value: _enableBiometric,
-                        onChanged: (v) => setState(() => _enableBiometric = v),
-                        contentPadding: EdgeInsets.zero,
+                      const SizedBox(height: 24),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'How do you want to unlock?',
+                          style: theme.textTheme.titleSmall,
+                        ),
                       ),
+                      const SizedBox(height: 8),
+                      _buildMethodTile(
+                        theme,
+                        method: UnlockMethod.appPin,
+                        icon: Icons.pin_outlined,
+                        title: '6-digit app PIN',
+                        subtitle: 'Recommended. A PIN unique to Citadel, mixed '
+                            'into your encryption key for extra protection.',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildMethodTile(
+                        theme,
+                        method: UnlockMethod.deviceLock,
+                        icon: Icons.phonelink_lock_outlined,
+                        title: "Use my phone's screen lock",
+                        subtitle: 'Unlock with your phone PIN, pattern, or '
+                            'biometrics. Convenient — no separate app PIN.',
+                      ),
+                      if (_method == UnlockMethod.appPin) ...[
+                        const SizedBox(height: 4),
+                        SwitchListTile(
+                          title: const Text('Also allow biometric unlock'),
+                          subtitle:
+                              const Text('Use fingerprint or face instead of the PIN'),
+                          value: _enableBiometric,
+                          onChanged: (v) => setState(() => _enableBiometric = v),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
