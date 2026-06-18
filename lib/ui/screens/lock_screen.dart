@@ -20,8 +20,6 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   String? _error;
   bool _showPinInput = false;
   String? _pinError;
-  int _pinAttempts = 0;
-  DateTime? _lockoutUntil;
 
   @override
   void initState() {
@@ -33,16 +31,9 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   static const _maxAttemptsBeforeLockout = 5;
 
   Future<void> _initializePinState() async {
-    final keystore = ref.read(keystoreServiceProvider);
-    final pinEnabled = await keystore.isPinEnabled();
-    final attempts = await keystore.getPinAttempts();
-    final lockout = await keystore.getPinLockoutUntil();
+    final pinEnabled = await ref.read(keystoreServiceProvider).isPinEnabled();
     if (!mounted) return;
-    setState(() {
-      _showPinInput = pinEnabled; // Show PIN pad directly if enabled
-      _pinAttempts = attempts;
-      _lockoutUntil = lockout;
-    });
+    setState(() => _showPinInput = pinEnabled); // Show PIN pad if enabled
   }
 
   @override
@@ -120,17 +111,12 @@ class _LockScreenState extends ConsumerState<LockScreen> {
       final until = DateTime.now().add(Duration(seconds: secs));
       await keystore.setPinLockoutUntil(until);
       if (!mounted) return;
-      setState(() {
-        _lockoutUntil = until;
-        _pinError = 'Too many wrong attempts. Locked for ${secs}s.';
-      });
+      setState(() =>
+          _pinError = 'Too many wrong attempts. Locked for ${secs}s.');
     } else {
       if (!mounted) return;
-      setState(() {
-        _pinAttempts = attempts;
-        _pinError =
-            'Wrong PIN — ${_maxAttemptsBeforeLockout - attempts} attempt(s) left.';
-      });
+      setState(() => _pinError =
+          'Wrong PIN — ${_maxAttemptsBeforeLockout - attempts} attempt(s) left.');
     }
   }
 
@@ -226,11 +212,11 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Palette.primary, Palette.accent],
-                        ).createShader(bounds),
-                        child: const Icon(Icons.bolt, size: 20, color: Colors.white),
+                      Image.asset(
+                        'assets/logo/energma_logo.png',
+                        width: 20,
+                        height: 20,
+                        color: Palette.primary,
                       ),
                       const SizedBox(width: 4),
                       Text(

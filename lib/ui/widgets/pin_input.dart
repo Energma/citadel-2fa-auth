@@ -9,6 +9,12 @@ class PinInput extends StatefulWidget {
   final String title;
   final String subtitle;
 
+  /// When non-null, a submit button with this label is shown and the PIN is
+  /// only submitted when it's tapped (so the user can review/correct first).
+  /// When null, the PIN auto-submits once all digits are entered — used for
+  /// the fast unlock screen.
+  final String? submitLabel;
+
   const PinInput({
     super.key,
     this.length = 6,
@@ -16,6 +22,7 @@ class PinInput extends StatefulWidget {
     this.error,
     this.title = 'Enter PIN',
     this.subtitle = '',
+    this.submitLabel,
   });
 
   @override
@@ -58,9 +65,18 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     if (_pin.length >= widget.length) return;
     HapticFeedback.lightImpact();
     setState(() => _pin += digit.toString());
-    if (_pin.length == widget.length) {
+    // Auto-submit only when there's no explicit submit button (fast unlock).
+    if (_pin.length == widget.length && widget.submitLabel == null) {
       widget.onCompleted(_pin);
     }
+  }
+
+  void _submit() {
+    if (_pin.length != widget.length) return;
+    HapticFeedback.lightImpact();
+    final value = _pin;
+    setState(() => _pin = '');
+    widget.onCompleted(value);
   }
 
   void _deleteDigit() {
@@ -178,6 +194,19 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
             ],
           ),
         ),
+
+        // Explicit submit button (when enabled) — lets the user review and
+        // correct the PIN before confirming instead of auto-submitting.
+        if (widget.submitLabel != null) ...[
+          const SizedBox(height: 28),
+          SizedBox(
+            width: 280,
+            child: ElevatedButton(
+              onPressed: _pin.length == widget.length ? _submit : null,
+              child: Text(widget.submitLabel!),
+            ),
+          ),
+        ],
       ],
     );
   }

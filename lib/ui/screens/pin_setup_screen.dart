@@ -56,6 +56,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
                 ? "Pick a 6-digit PIN for Citadel. This is separate from your "
                     "phone's screen lock — you'll enter it to unlock the app."
                 : 'Re-enter the same 6 digits to confirm.',
+            submitLabel: _firstPin == null ? 'Continue' : 'Confirm PIN',
           ),
         ),
       ),
