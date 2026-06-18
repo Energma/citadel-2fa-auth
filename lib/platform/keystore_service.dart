@@ -15,8 +15,10 @@ class KeystoreService {
   static const _biometricEnabledKey = 'citadel_biometric_enabled';
   static const _autoLockMinutesKey = 'citadel_auto_lock_minutes';
   static const _themeModeKey = 'citadel_theme_mode';
-  static const _pinHashKey = 'citadel_pin_hash';
+  static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
+  static const _pinAttemptsKey = 'citadel_pin_attempts';
+  static const _pinLockoutUntilKey = 'citadel_pin_lockout_until';
   static const _masterPasswordKey = 'citadel_master_password';
 
   /// Store the derived vault key in secure storage.
@@ -65,21 +67,57 @@ class KeystoreService {
     return value == 'true';
   }
 
-  /// Store the SHA-256 hash of the PIN for quick validation.
-  Future<void> storePinHash(String hash) async {
-    await _storage.write(key: _pinHashKey, value: hash);
-    await _storage.write(key: _pinEnabledKey, value: 'true');
+  /// Mark PIN unlock as enabled. The PIN itself is never stored — it is part of
+  /// the vault passphrase, so successfully decrypting the database IS the check.
+  /// This avoids keeping any PIN-derived secret (a brute-forceable target for a
+  /// 6-digit PIN) in storage.
+  Future<void> setPinEnabled(bool enabled) async {
+    await _storage.write(key: _pinEnabledKey, value: enabled.toString());
+    // Clear any legacy hash from older builds.
+    await _storage.delete(key: _pinHashKey);
+    // A freshly (re)configured PIN starts with a clean attempt history.
+    if (enabled) await resetPinLockout();
   }
 
-  /// Get the stored PIN hash.
-  Future<String?> getPinHash() async {
-    return _storage.read(key: _pinHashKey);
-  }
-
-  /// Clear PIN (disable).
+  /// Clear PIN (disable) and any legacy stored hash.
   Future<void> clearPin() async {
     await _storage.delete(key: _pinHashKey);
     await _storage.write(key: _pinEnabledKey, value: 'false');
+    await resetPinLockout();
+  }
+
+  // --- Brute-force lockout (persisted so it survives app restarts) ---
+
+  /// Number of consecutive wrong PIN attempts.
+  Future<int> getPinAttempts() async {
+    return int.tryParse(await _storage.read(key: _pinAttemptsKey) ?? '') ?? 0;
+  }
+
+  Future<void> setPinAttempts(int attempts) async {
+    await _storage.write(key: _pinAttemptsKey, value: attempts.toString());
+  }
+
+  /// Time until which PIN entry is locked out, or null if not locked.
+  Future<DateTime?> getPinLockoutUntil() async {
+    final ms = int.tryParse(await _storage.read(key: _pinLockoutUntilKey) ?? '');
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setPinLockoutUntil(DateTime? until) async {
+    if (until == null) {
+      await _storage.delete(key: _pinLockoutUntilKey);
+    } else {
+      await _storage.write(
+        key: _pinLockoutUntilKey,
+        value: until.millisecondsSinceEpoch.toString(),
+      );
+    }
+  }
+
+  /// Reset the attempt counter and clear any active lockout.
+  Future<void> resetPinLockout() async {
+    await _storage.delete(key: _pinAttemptsKey);
+    await _storage.delete(key: _pinLockoutUntilKey);
   }
 
   /// Store auto-lock timeout in minutes.

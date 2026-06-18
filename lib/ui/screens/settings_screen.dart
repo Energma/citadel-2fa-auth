@@ -11,7 +11,6 @@ import '../../core/providers.dart';
 import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
 import '../../ui/theme/palette.dart';
-import 'package:crypto/crypto.dart';
 import 'pin_setup_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -758,9 +757,8 @@ class _PinTileState extends ConsumerState<_PinTile> {
       // Store master password for PIN-only login
       await keystore.storeMasterPassword(password);
 
-      // Store PIN hash
-      final pinHash = sha256.convert(utf8.encode(pin)).toString();
-      await keystore.storePinHash(pinHash);
+      // The PIN is part of the passphrase; just record that PIN unlock is on.
+      await keystore.setPinEnabled(true);
 
       // Update stored vault key for biometric
       final bioEnabled = await keystore.isBiometricEnabled();
@@ -813,8 +811,7 @@ class _PinTileState extends ConsumerState<_PinTile> {
       // Store master password for PIN-only login
       await keystore.storeMasterPassword(password);
 
-      final pinHash = sha256.convert(utf8.encode(newPin)).toString();
-      await keystore.storePinHash(pinHash);
+      await keystore.setPinEnabled(true);
 
       final bioEnabled = await keystore.isBiometricEnabled();
       if (bioEnabled) {

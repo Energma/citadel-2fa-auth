@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import 'pin_setup_screen.dart';
@@ -81,7 +80,9 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
     if (success) {
       final keystore = ref.read(keystoreServiceProvider);
       await keystore.storeMasterPassword(password);
-      await keystore.storePinHash(sha256.convert(utf8.encode(pin)).toString());
+      // The PIN is part of the passphrase above; we only record that PIN unlock
+      // is enabled — the PIN itself is never stored.
+      await keystore.setPinEnabled(true);
 
       // Optional biometric convenience on top of the PIN.
       if (_enableBiometric) {

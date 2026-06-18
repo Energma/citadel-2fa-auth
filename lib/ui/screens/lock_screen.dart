@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../ui/theme/palette.dart';
@@ -32,13 +30,18 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     _tryBiometric();
   }
 
+  static const _maxAttemptsBeforeLockout = 5;
+
   Future<void> _initializePinState() async {
     final keystore = ref.read(keystoreServiceProvider);
     final pinEnabled = await keystore.isPinEnabled();
+    final attempts = await keystore.getPinAttempts();
+    final lockout = await keystore.getPinLockoutUntil();
+    if (!mounted) return;
     setState(() {
-      if (pinEnabled) {
-        _showPinInput = true; // Show PIN directly if enabled
-      }
+      _showPinInput = pinEnabled; // Show PIN pad directly if enabled
+      _pinAttempts = attempts;
+      _lockoutUntil = lockout;
     });
   }
 
@@ -77,49 +80,57 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   Future<void> _handlePinCompleted(String pin) async {
-    // Check lockout status
-    if (_lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!)) {
-      setState(() => _pinError = 'Too many attempts. Try again in 30 seconds.');
-      return;
-    }
-
-    // Validate PIN hash
     final keystore = ref.read(keystoreServiceProvider);
-    final storedHash = await keystore.getPinHash();
-    final enteredHash = sha256.convert(utf8.encode(pin)).toString();
 
-    if (storedHash != null && storedHash != enteredHash) {
-      _pinAttempts++;
-      if (_pinAttempts >= 5) {
-        setState(() {
-          _lockoutUntil = DateTime.now().add(const Duration(seconds: 30));
-          _pinError = 'Too many wrong attempts. Try again in 30 seconds.';
-        });
-      } else {
-        setState(() => _pinError = 'Wrong PIN (${5 - _pinAttempts} attempts left)');
-      }
+    // Enforce the persisted lockout (survives app restarts, so it can't be
+    // bypassed by force-quitting and reopening the app).
+    final lockout = await keystore.getPinLockoutUntil();
+    if (lockout != null && DateTime.now().isBefore(lockout)) {
+      final secs = lockout.difference(DateTime.now()).inSeconds + 1;
+      setState(() => _pinError = 'Too many attempts. Try again in ${secs}s.');
       return;
     }
 
-    // PIN valid - retrieve stored master password and combine for vault unlock
     final masterPassword = await keystore.getMasterPassword();
     if (masterPassword == null) {
-      setState(() => _pinError = 'Error: Master password not found');
+      setState(() =>
+          _pinError = 'Setup incomplete — please reinstall and set up again.');
       return;
     }
 
-    final fullPassphrase = '$masterPassword$pin';
-    final success = await ref.read(vaultProvider.notifier).unlock(fullPassphrase);
+    // The PIN is never stored. Whether it decrypts the vault IS the check —
+    // and the Argon2id key derivation makes each attempt deliberately slow.
+    final success =
+        await ref.read(vaultProvider.notifier).unlock('$masterPassword$pin');
+    if (!mounted) return;
 
-    if (mounted) {
-      if (!success) {
-        setState(() {
-          _pinError = 'Failed to unlock vault';
-          _error = 'Error unlocking vault';
-          _pinAttempts = 0;
-          _lockoutUntil = null;
-        });
-      }
+    if (success) {
+      await keystore.resetPinLockout(); // vault state flips to unlocked
+      return;
+    }
+
+    // Wrong PIN — increment the persisted counter and apply an escalating
+    // lockout once the threshold is crossed.
+    final attempts = await keystore.getPinAttempts() + 1;
+    await keystore.setPinAttempts(attempts);
+    final over = attempts - _maxAttemptsBeforeLockout;
+    if (over >= 0) {
+      // 30s, 60s, 120s, … capped at 30 minutes.
+      final secs = (30 * (1 << over.clamp(0, 16))).clamp(30, 1800);
+      final until = DateTime.now().add(Duration(seconds: secs));
+      await keystore.setPinLockoutUntil(until);
+      if (!mounted) return;
+      setState(() {
+        _lockoutUntil = until;
+        _pinError = 'Too many wrong attempts. Locked for ${secs}s.';
+      });
+    } else {
+      if (!mounted) return;
+      setState(() {
+        _pinAttempts = attempts;
+        _pinError =
+            'Wrong PIN — ${_maxAttemptsBeforeLockout - attempts} attempt(s) left.';
+      });
     }
   }
 
