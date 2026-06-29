@@ -49,7 +49,10 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(PinInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.error != null && oldWidget.error == null) {
+    // Shake and clear whenever a new error arrives — not just the first one.
+    // Comparing values (rather than null→non-null) means a second consecutive
+    // wrong PIN still resets the dots so the user can re-enter.
+    if (widget.error != null && widget.error != oldWidget.error) {
       _shakeController.forward().then((_) => _shakeController.reverse());
       setState(() => _pin = '');
     }
@@ -66,8 +69,12 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     HapticFeedback.lightImpact();
     setState(() => _pin += digit.toString());
     // Auto-submit only when there's no explicit submit button (fast unlock).
+    // Clear the entered PIN as we submit so the dots reset for the next try
+    // even when the error message is identical to the previous attempt's.
     if (_pin.length == widget.length && widget.submitLabel == null) {
-      widget.onCompleted(_pin);
+      final value = _pin;
+      setState(() => _pin = '');
+      widget.onCompleted(value);
     }
   }
 
