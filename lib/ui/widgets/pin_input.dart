@@ -133,16 +133,15 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
                   duration: const Duration(milliseconds: 150),
                   width: filled ? 16 : 14,
                   height: filled ? 16 : 14,
+                  // On a wrong PIN the dots simply reset to their empty,
+                  // unfilled state — the error is conveyed by the live message
+                  // (and the shake) rather than by recoloring the circles red.
                   decoration: BoxDecoration(
-                    color: widget.error != null
-                        ? theme.colorScheme.error
-                        : filled
-                            ? theme.colorScheme.primary
-                            : Colors.transparent,
+                    color: filled
+                        ? theme.colorScheme.primary
+                        : Colors.transparent,
                     border: Border.all(
-                      color: widget.error != null
-                          ? theme.colorScheme.error
-                          : theme.colorScheme.primary.withAlpha(filled ? 255 : 80),
+                      color: theme.colorScheme.primary.withAlpha(filled ? 255 : 80),
                       width: 2,
                     ),
                     shape: BoxShape.circle,
