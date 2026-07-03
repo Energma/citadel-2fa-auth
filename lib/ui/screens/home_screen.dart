@@ -6,6 +6,7 @@ import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../widgets/token_card.dart';
+import '../widgets/master_password_dialog.dart';
 import 'add_token_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
@@ -86,33 +87,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _deleteToken(String id) async {
-    final confirmed = await showDialog<bool>(
+    // Deleting permanently loses data. A single master-password step is both
+    // the confirmation and the authentication — no separate confirm dialog, so
+    // the destructive warning lives here alongside the password prompt.
+    await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Token'),
-        content: const Text(
-          'This will permanently remove this token. You may lose access to the associated account if you don\'t have a backup.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Delete',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        ],
+      builder: (pwdCtx) => MasterPasswordDialog(
+        title: 'Delete Token',
+        subtitle:
+            'This permanently removes the token — you may lose access to the '
+            'account if you don\'t have a backup. Enter your master password to '
+            'confirm.',
+        onConfirm: () async {
+          await ref.read(tokenRepositoryProvider).delete(id);
+          ref.invalidate(tokenListProvider);
+        },
       ),
     );
-
-    if (confirmed == true) {
-      await ref.read(tokenRepositoryProvider).delete(id);
-      ref.invalidate(tokenListProvider);
-    }
   }
 
   @override

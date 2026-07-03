@@ -257,30 +257,27 @@ class _ProfileTab extends ConsumerWidget {
               onPressed: () {
                 final name = nameController.text.trim();
                 if (name.isEmpty) return;
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
 
-                if (ctx.mounted) {
-                  Navigator.pop(ctx);
-                  showDialog(
-                    context: context,
-                    builder: (pwdCtx) => MasterPasswordDialog(
-                      onConfirm: () async {
-                        final repo = ref.read(profileRepositoryProvider);
-                        if (existing != null) {
-                          await repo.update(existing.copyWith(
-                            name: name,
-                            colorValue: selectedColor,
-                          ));
-                        } else {
-                          await repo.add(Profile(
-                            name: name,
-                            colorValue: selectedColor,
-                          ));
-                        }
-                        ref.invalidate(profileListProvider);
-                      },
-                    ),
-                  );
+                // Adding and editing are non-destructive — no master password.
+                Future<void> persist() async {
+                  final repo = ref.read(profileRepositoryProvider);
+                  if (existing != null) {
+                    await repo.update(existing.copyWith(
+                      name: name,
+                      colorValue: selectedColor,
+                    ));
+                  } else {
+                    await repo.add(Profile(
+                      name: name,
+                      colorValue: selectedColor,
+                    ));
+                  }
+                  ref.invalidate(profileListProvider);
                 }
+
+                persist();
               },
               child: Text(existing == null ? 'Add' : 'Save'),
             ),
@@ -571,27 +568,24 @@ class _GroupTab extends ConsumerWidget {
             onPressed: () {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
 
-              if (ctx.mounted) {
-                Navigator.pop(ctx);
-                showDialog(
-                  context: context,
-                  builder: (pwdCtx) => MasterPasswordDialog(
-                    onConfirm: () async {
-                      final repo = ref.read(profileRepositoryProvider);
-                      if (existing != null) {
-                        await repo.updateGroup(existing.copyWith(name: name));
-                      } else {
-                        await repo.addGroup(TokenGroup(
-                          profileId: profileId,
-                          name: name,
-                        ));
-                      }
-                      ref.invalidate(groupListProvider);
-                    },
-                  ),
-                );
+              // Adding and renaming are non-destructive — no master password.
+              Future<void> persist() async {
+                final repo = ref.read(profileRepositoryProvider);
+                if (existing != null) {
+                  await repo.updateGroup(existing.copyWith(name: name));
+                } else {
+                  await repo.addGroup(TokenGroup(
+                    profileId: profileId,
+                    name: name,
+                  ));
+                }
+                ref.invalidate(groupListProvider);
               }
+
+              persist();
             },
             child: Text(existing == null ? 'Add' : 'Save'),
           ),
