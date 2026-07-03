@@ -1,0 +1,4 @@
+# Built APKs land here (via ./dev.sh release) — keep the folder, not the binaries.
+*.apk
+*.aab
+!.gitignore

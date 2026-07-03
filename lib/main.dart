@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:screen_protector/screen_protector.dart';
+import 'core/config/app_config.dart';
 import 'core/providers.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
@@ -9,6 +11,15 @@ import 'ui/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Prod builds block screenshots + screen recording and hide the app's
+  // contents in the recents/app-switcher thumbnail. Demo builds set
+  // ALLOW_SCREENSHOTS=true (via config/demo.json) so the app can be captured.
+  if (!AppConfig.allowScreenshots) {
+    await ScreenProtector.preventScreenshotOn();
+    await ScreenProtector.protectDataLeakageWithBlur();
+  }
+
   final container = ProviderContainer();
   await loadPersistedSettings(container);
   runApp(UncontrolledProviderScope(

@@ -30,6 +30,7 @@ dependencies:
   # Platform services
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.4
+  screen_protector: ^1.4.2
 
   # QR code
   mobile_scanner: ^6.0.2
