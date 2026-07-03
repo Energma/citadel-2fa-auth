@@ -4,13 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
 import '../../ui/theme/palette.dart';
+import '../widgets/master_password_dialog.dart';
 import 'pin_setup_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -439,14 +438,23 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     final json = ImportExport.exportToJson(tokens);
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/citadel_export_${DateTime.now().millisecondsSinceEpoch}.json');
-    await file.writeAsString(json);
 
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Citadel Auth backup',
+    // Save the backup to a location the user picks on this device. We
+    // deliberately use the file-save picker rather than the OS share sheet so
+    // secrets never leave the phone via email/WhatsApp/Viber/etc.
+    final savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save backup to this device',
+      fileName: 'citadel_export_${DateTime.now().millisecondsSinceEpoch}.json',
+      bytes: utf8.encode(json),
     );
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(savedPath == null ? 'Export cancelled' : 'Backup saved to device'),
+        ),
+      );
+    }
   }
 
   void _showEncryptedExportDialog(BuildContext context, WidgetRef ref) {
@@ -572,14 +580,21 @@ class SettingsScreen extends ConsumerWidget {
     // Format: base64(salt) + '\n' + encrypted
     final exportContent = '${base64.encode(salt)}\n$encrypted';
 
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/citadel_export_${DateTime.now().millisecondsSinceEpoch}.citadel.enc');
-    await file.writeAsString(exportContent);
-
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Citadel Auth encrypted backup',
+    // Save on-device only — no share sheet, so the encrypted backup can't be
+    // routed off the phone through messaging apps.
+    final savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save encrypted backup to this device',
+      fileName: 'citadel_export_${DateTime.now().millisecondsSinceEpoch}.citadel.enc',
+      bytes: utf8.encode(exportContent),
     );
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(savedPath == null ? 'Export cancelled' : 'Encrypted backup saved to device'),
+        ),
+      );
+    }
   }
 
   void _deleteVault(BuildContext context, WidgetRef ref) async {
@@ -601,15 +616,27 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true) {
-      final db = ref.read(vaultDatabaseProvider);
-      await db.deleteVault();
-      final keystore = ref.read(keystoreServiceProvider);
-      await keystore.clearAll();
-      ref.read(vaultProvider.notifier).checkStatus();
-      if (context.mounted) {
-        Navigator.popUntil(context, (route) => route.isFirst);
-      }
+    if (confirmed == true && context.mounted) {
+      // Wiping the vault is the most destructive action — require the master
+      // password before erasing everything.
+      showDialog(
+        context: context,
+        builder: (pwdCtx) => MasterPasswordDialog(
+          title: 'Confirm Vault Deletion',
+          subtitle:
+              'Enter your master password to permanently delete all data.',
+          onConfirm: () async {
+            final db = ref.read(vaultDatabaseProvider);
+            await db.deleteVault();
+            final keystore = ref.read(keystoreServiceProvider);
+            await keystore.clearAll();
+            ref.read(vaultProvider.notifier).checkStatus();
+            if (context.mounted) {
+              Navigator.popUntil(context, (route) => route.isFirst);
+            }
+          },
+        ),
+      );
     }
   }
 }
