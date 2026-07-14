@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:crypto/crypto.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../ui/theme/palette.dart';
@@ -21,28 +19,39 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   bool _loading = false;
   String? _error;
   bool _showPinInput = false;
-  bool _pinEnabled = false;
   String? _pinError;
-  int _pinAttempts = 0;
-  bool _pinLocked = false;
-  DateTime? _lockoutUntil;
+  bool _biometricUsable = false;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    _initializePinState();
-    _tryBiometric();
+    _initializeLockState();
   }
 
-  Future<void> _initializePinState() async {
+  static const _maxAttemptsBeforeLockout = 5;
+
+  /// Work out which unlock method this device actually has before rendering, so
+  /// we never flash the master password screen at someone who unlocks with a
+  /// fingerprint. The password is a deliberate fallback, not the default.
+  Future<void> _initializeLockState() async {
     final keystore = ref.read(keystoreServiceProvider);
+    final biometric = ref.read(biometricServiceProvider);
+
     final pinEnabled = await keystore.isPinEnabled();
+    final biometricEnabled = await keystore.isBiometricEnabled();
+    // Enabled in settings is not enough — the device must still be able to do
+    // it (credential removed, biometrics unenrolled).
+    final biometricUsable = biometricEnabled && await biometric.isAvailable();
+
+    if (!mounted) return;
     setState(() {
-      _pinEnabled = pinEnabled;
-      if (pinEnabled) {
-        _showPinInput = true; // Show PIN directly if enabled
-      }
+      _showPinInput = pinEnabled;
+      _biometricUsable = biometricUsable;
+      _initialized = true;
     });
+
+    if (biometricUsable) await _tryBiometric();
   }
 
   @override
@@ -51,25 +60,20 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     super.dispose();
   }
 
+  /// Prompt for the device credential. Safe to call again — cancelling just
+  /// leaves the user on the lock screen with the Verify button still there.
   Future<void> _tryBiometric() async {
     final biometric = ref.read(biometricServiceProvider);
     final keystore = ref.read(keystoreServiceProvider);
 
-    final enabled = await keystore.isBiometricEnabled();
-    if (!enabled) return;
-
-    final available = await biometric.isAvailable();
-    if (!available) return;
-
     final success = await biometric.authenticate();
-    if (success && mounted) {
-      final key = await keystore.getVaultKey();
-      if (key != null) {
-        // The stored key is the full passphrase (password+pin) encoded as UTF-8
-        final passphrase = String.fromCharCodes(key);
-        await _unlock(passphrase);
-      }
-    }
+    if (!success || !mounted) return;
+
+    final key = await keystore.getVaultKey();
+    if (key == null) return;
+
+    // The stored key is the full passphrase (password+pin) encoded as UTF-8.
+    await _unlock(String.fromCharCodes(key));
   }
 
   Future<void> _handlePasswordSubmit() async {
@@ -80,51 +84,52 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   Future<void> _handlePinCompleted(String pin) async {
-    // Check lockout status
-    if (_lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!)) {
-      setState(() => _pinError = 'Too many attempts. Try again in 30 seconds.');
-      return;
-    }
-
-    // Validate PIN hash
     final keystore = ref.read(keystoreServiceProvider);
-    final storedHash = await keystore.getPinHash();
-    final enteredHash = sha256.convert(utf8.encode(pin)).toString();
 
-    if (storedHash != null && storedHash != enteredHash) {
-      _pinAttempts++;
-      if (_pinAttempts >= 5) {
-        setState(() {
-          _lockoutUntil = DateTime.now().add(const Duration(seconds: 30));
-          _pinLocked = true;
-          _pinError = 'Too many wrong attempts. Try again in 30 seconds.';
-        });
-      } else {
-        setState(() => _pinError = 'Wrong PIN (${5 - _pinAttempts} attempts left)');
-      }
+    // Enforce the persisted lockout (survives app restarts, so it can't be
+    // bypassed by force-quitting and reopening the app).
+    final lockout = await keystore.getPinLockoutUntil();
+    if (lockout != null && DateTime.now().isBefore(lockout)) {
+      final secs = lockout.difference(DateTime.now()).inSeconds + 1;
+      setState(() => _pinError = 'Too many attempts. Try again in ${secs}s.');
       return;
     }
 
-    // PIN valid - retrieve stored master password and combine for vault unlock
     final masterPassword = await keystore.getMasterPassword();
     if (masterPassword == null) {
-      setState(() => _pinError = 'Error: Master password not found');
+      setState(() =>
+          _pinError = 'Setup incomplete — please reinstall and set up again.');
       return;
     }
 
-    final fullPassphrase = '$masterPassword$pin';
-    final success = await ref.read(vaultProvider.notifier).unlock(fullPassphrase);
+    // The PIN is never stored. Whether it decrypts the vault IS the check —
+    // and the Argon2id key derivation makes each attempt deliberately slow.
+    final success =
+        await ref.read(vaultProvider.notifier).unlock('$masterPassword$pin');
+    if (!mounted) return;
 
-    if (mounted) {
-      if (!success) {
-        setState(() {
-          _pinError = 'Failed to unlock vault';
-          _error = 'Error unlocking vault';
-          _pinAttempts = 0;
-          _pinLocked = false;
-          _lockoutUntil = null;
-        });
-      }
+    if (success) {
+      await keystore.resetPinLockout(); // vault state flips to unlocked
+      return;
+    }
+
+    // Wrong PIN — increment the persisted counter and apply an escalating
+    // lockout once the threshold is crossed.
+    final attempts = await keystore.getPinAttempts() + 1;
+    await keystore.setPinAttempts(attempts);
+    final over = attempts - _maxAttemptsBeforeLockout;
+    if (over >= 0) {
+      // 30s, 60s, 120s, … capped at 30 minutes.
+      final secs = (30 * (1 << over.clamp(0, 16))).clamp(30, 1800);
+      final until = DateTime.now().add(Duration(seconds: secs));
+      await keystore.setPinLockoutUntil(until);
+      if (!mounted) return;
+      setState(() =>
+          _pinError = 'Too many wrong attempts. Locked for ${secs}s.');
+    } else {
+      if (!mounted) return;
+      setState(() => _pinError =
+          'Wrong PIN — ${_maxAttemptsBeforeLockout - attempts} attempt(s) left.');
     }
   }
 
@@ -135,6 +140,16 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     });
 
     final success = await ref.read(vaultProvider.notifier).unlock(passphrase);
+
+    if (success) {
+      // Without a PIN the unlock passphrase is the master password itself —
+      // persist it so vaults created before it was stored can still verify
+      // master-password confirmations.
+      final keystore = ref.read(keystoreServiceProvider);
+      if (!await keystore.isPinEnabled()) {
+        await keystore.storeMasterPassword(passphrase);
+      }
+    }
 
     if (mounted) {
       setState(() => _loading = false);
@@ -168,9 +183,11 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           children: [
             Expanded(
               child: Center(
-                child: _showPinInput
-                    ? _buildPinView(theme)
-                    : _buildPasswordView(theme),
+                child: !_initialized
+                    ? const CircularProgressIndicator()
+                    : _showPinInput
+                        ? _buildPinView(theme)
+                        : _buildPasswordView(theme),
               ),
             ),
             // Footer with links and Powered by Energma
@@ -210,11 +227,11 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Palette.primary, Palette.accent],
-                        ).createShader(bounds),
-                        child: const Icon(Icons.bolt, size: 20, color: Colors.white),
+                      Image.asset(
+                        'assets/logo/energma_logo.png',
+                        width: 20,
+                        height: 20,
+                        color: Palette.primary,
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -311,17 +328,69 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   : const Text('Unlock'),
             ),
           ),
+          if (_biometricUsable) _buildBiometricAction(theme),
         ],
       ),
     );
   }
 
   Widget _buildPinView(ThemeData theme) {
-    return PinInput(
-      onCompleted: _handlePinCompleted,
-      error: _pinError,
-      title: 'Enter PIN',
-      subtitle: 'Enter your 6-digit PIN to unlock',
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PinInput(
+          onCompleted: _handlePinCompleted,
+          error: _pinError,
+          title: 'Enter PIN',
+          subtitle: 'Enter your 6-digit PIN to unlock',
+        ),
+        if (_biometricUsable)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: _buildBiometricAction(theme),
+          ),
+      ],
+    );
+  }
+
+  /// Re-trigger the device prompt from the same screen. The automatic attempt on
+  /// open can be cancelled or mis-scanned; without this the only way back to
+  /// biometrics was to force-quit the app.
+  Widget _buildBiometricAction(ThemeData theme) {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(child: Divider(color: theme.dividerColor)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'or',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withAlpha(120),
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: theme.dividerColor)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _tryBiometric,
+            icon: const Icon(Icons.fingerprint, size: 22),
+            label: const Text('Verify to unlock Citadel Auth'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

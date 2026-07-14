@@ -4,14 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
+import '../../ui/theme/app_theme.dart';
 import '../../ui/theme/palette.dart';
-import 'package:crypto/crypto.dart';
+import '../widgets/master_password_dialog.dart';
 import 'pin_setup_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -22,6 +21,7 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final themeMode = ref.watch(themeModeProvider);
+    final accent = ref.watch(accentColorProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -33,6 +33,21 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Theme'),
             subtitle: Text(_themeModeLabel(themeMode)),
             onTap: () => _showThemePicker(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Personal Theme'),
+            subtitle: Text(_accentLabel(accent)),
+            trailing: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+                border: Border.all(color: theme.dividerColor),
+              ),
+            ),
+            onTap: () => _showAccentPicker(context, ref),
           ),
 
           _sectionHeader(theme, 'Security'),
@@ -75,12 +90,17 @@ class SettingsScreen extends ConsumerWidget {
               height: 24,
             ),
             title: const Text('Citadel Auth'),
-            subtitle: const Text('v0.1.0 - Privacy-first 2FA'),
+            subtitle: Text(
+              ref.watch(appVersionProvider).maybeWhen(
+                    data: (v) => 'v$v - Privacy-first 2FA',
+                    orElse: () => 'Privacy-first 2FA',
+                  ),
+            ),
           ),
           const ListTile(
             leading: Icon(Icons.code),
             title: Text('Open Source'),
-            subtitle: Text('GPL-3.0 License'),
+            subtitle: Text('Apache-2.0 License'),
           ),
           const ListTile(
             leading: Icon(Icons.privacy_tip),
@@ -208,6 +228,20 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  String _accentLabel(Color accent) {
+    for (final (name, color) in Palette.accentPresets) {
+      if (color.toARGB32() == accent.toARGB32()) return name;
+    }
+    return 'Custom';
+  }
+
+  void _showAccentPicker(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (_) => const _AccentPickerDialog(),
+    );
+  }
+
   String _formatDuration(Duration d) {
     if (d.inMinutes == 0) return 'Immediately';
     if (d.inMinutes < 60) return '${d.inMinutes} minutes';
@@ -249,8 +283,31 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if (result == null || result.files.isEmpty) return;
-    final file = File(result.files.single.path!);
-    final content = await file.readAsString();
+    final picked = result.files.single;
+    final file = File(picked.path!);
+    final rawContent = await file.readAsString();
+
+    // Encrypted backups are stored as `base64(salt)\n<ciphertext>` and must be
+    // decrypted with the export password before the token JSON can be parsed.
+    String content = rawContent;
+    if (_looksEncrypted(picked.name, rawContent)) {
+      if (!context.mounted) return;
+      final password = await _promptImportPassword(context);
+      if (password == null || password.isEmpty) return;
+
+      try {
+        content = await _decryptExport(rawContent, password);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Incorrect password or corrupted backup file'),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     try {
       final tokens = ImportExport.importFromJson(content);
@@ -278,6 +335,100 @@ class SettingsScreen extends ConsumerWidget {
         );
       }
     }
+  }
+
+  /// Detects whether a picked file is a Citadel encrypted export rather than
+  /// plaintext JSON / otpauth URIs. Matches on the `.enc` extension or the
+  /// `base64(salt)\n<ciphertext>` shape produced by [_exportTokensEncrypted].
+  bool _looksEncrypted(String fileName, String content) {
+    if (fileName.toLowerCase().endsWith('.enc')) return true;
+
+    final trimmed = content.trimLeft();
+    // Plaintext exports start with a JSON object/array or an otpauth URI.
+    if (trimmed.startsWith('{') ||
+        trimmed.startsWith('[') ||
+        trimmed.startsWith('otpauth')) {
+      return false;
+    }
+
+    final newlineIdx = content.indexOf('\n');
+    if (newlineIdx <= 0) return false;
+    try {
+      // First line must be the base64-encoded salt (32 bytes).
+      final salt = base64.decode(content.substring(0, newlineIdx).trim());
+      return salt.length == 32;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Reverses [_exportTokensEncrypted]: parses the salt, derives the key from
+  /// [password], and returns the decrypted token JSON. Throws if the password
+  /// is wrong or the file is corrupted.
+  Future<String> _decryptExport(String content, String password) async {
+    final newlineIdx = content.indexOf('\n');
+    if (newlineIdx <= 0) {
+      throw const FormatException('Malformed encrypted backup');
+    }
+    final salt = base64.decode(content.substring(0, newlineIdx).trim());
+    final ciphertext = content.substring(newlineIdx + 1).trim();
+    final key = await VaultEncryption.deriveKey(password, salt);
+    return VaultEncryption.decryptString(ciphertext, key);
+  }
+
+  /// Prompts for the password used to encrypt an imported backup file.
+  Future<String?> _promptImportPassword(BuildContext context) {
+    final controller = TextEditingController();
+    final theme = Theme.of(context);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Encrypted Backup'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+          decoration: InputDecoration(
+            labelText: 'Export Password',
+            hintText: 'Password used to encrypt this file',
+            prefixIcon: const Icon(Icons.lock_outline),
+            filled: true,
+            fillColor: theme.colorScheme.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(100),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.outline.withAlpha(80),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            floatingLabelBehavior: FloatingLabelBehavior.auto,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showExportDialog(BuildContext context, WidgetRef ref) {
@@ -318,14 +469,23 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     final json = ImportExport.exportToJson(tokens);
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/citadel_export_${DateTime.now().millisecondsSinceEpoch}.json');
-    await file.writeAsString(json);
 
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Citadel Auth backup',
+    // Save the backup to a location the user picks on this device. We
+    // deliberately use the file-save picker rather than the OS share sheet so
+    // secrets never leave the phone via email/WhatsApp/Viber/etc.
+    final savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save backup to this device',
+      fileName: 'citadel_export_${DateTime.now().millisecondsSinceEpoch}.json',
+      bytes: utf8.encode(json),
     );
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(savedPath == null ? 'Export cancelled' : 'Backup saved to device'),
+        ),
+      );
+    }
   }
 
   void _showEncryptedExportDialog(BuildContext context, WidgetRef ref) {
@@ -451,14 +611,21 @@ class SettingsScreen extends ConsumerWidget {
     // Format: base64(salt) + '\n' + encrypted
     final exportContent = '${base64.encode(salt)}\n$encrypted';
 
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/citadel_export_${DateTime.now().millisecondsSinceEpoch}.citadel.enc');
-    await file.writeAsString(exportContent);
-
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Citadel Auth encrypted backup',
+    // Save on-device only — no share sheet, so the encrypted backup can't be
+    // routed off the phone through messaging apps.
+    final savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save encrypted backup to this device',
+      fileName: 'citadel_export_${DateTime.now().millisecondsSinceEpoch}.citadel.enc',
+      bytes: utf8.encode(exportContent),
     );
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(savedPath == null ? 'Export cancelled' : 'Encrypted backup saved to device'),
+        ),
+      );
+    }
   }
 
   void _deleteVault(BuildContext context, WidgetRef ref) async {
@@ -480,15 +647,27 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true) {
-      final db = ref.read(vaultDatabaseProvider);
-      await db.deleteVault();
-      final keystore = ref.read(keystoreServiceProvider);
-      await keystore.clearAll();
-      ref.read(vaultProvider.notifier).checkStatus();
-      if (context.mounted) {
-        Navigator.popUntil(context, (route) => route.isFirst);
-      }
+    if (confirmed == true && context.mounted) {
+      // Wiping the vault is the most destructive action — require the master
+      // password before erasing everything.
+      showDialog(
+        context: context,
+        builder: (pwdCtx) => MasterPasswordDialog(
+          title: 'Confirm Vault Deletion',
+          subtitle:
+              'Enter your master password to permanently delete all data.',
+          onConfirm: () async {
+            final db = ref.read(vaultDatabaseProvider);
+            await db.deleteVault();
+            final keystore = ref.read(keystoreServiceProvider);
+            await keystore.clearAll();
+            ref.read(vaultProvider.notifier).checkStatus();
+            if (context.mounted) {
+              Navigator.popUntil(context, (route) => route.isFirst);
+            }
+          },
+        ),
+      );
     }
   }
 }
@@ -620,6 +799,15 @@ class _PinTileState extends ConsumerState<_PinTile> {
     final password = await _promptPassword(context, 'Enter your master password to enable PIN');
     if (password == null || !mounted) return;
 
+    if (!await keystore.verifyMasterPassword(password)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect master password')),
+        );
+      }
+      return;
+    }
+
     try {
       final newPassphrase = '$password$pin';
       await db.rekey(newPassphrase);
@@ -627,9 +815,8 @@ class _PinTileState extends ConsumerState<_PinTile> {
       // Store master password for PIN-only login
       await keystore.storeMasterPassword(password);
 
-      // Store PIN hash
-      final pinHash = sha256.convert(utf8.encode(pin)).toString();
-      await keystore.storePinHash(pinHash);
+      // The PIN is part of the passphrase; just record that PIN unlock is on.
+      await keystore.setPinEnabled(true);
 
       // Update stored vault key for biometric
       final bioEnabled = await keystore.isBiometricEnabled();
@@ -666,6 +853,15 @@ class _PinTileState extends ConsumerState<_PinTile> {
     final keystore = ref.read(keystoreServiceProvider);
     final db = ref.read(vaultDatabaseProvider);
 
+    if (!await keystore.verifyMasterPassword(password)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect master password')),
+        );
+      }
+      return;
+    }
+
     try {
       final newPassphrase = '$password$newPin';
       await db.rekey(newPassphrase);
@@ -673,8 +869,7 @@ class _PinTileState extends ConsumerState<_PinTile> {
       // Store master password for PIN-only login
       await keystore.storeMasterPassword(password);
 
-      final pinHash = sha256.convert(utf8.encode(newPin)).toString();
-      await keystore.storePinHash(pinHash);
+      await keystore.setPinEnabled(true);
 
       final bioEnabled = await keystore.isBiometricEnabled();
       if (bioEnabled) {
@@ -701,6 +896,15 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
     final keystore = ref.read(keystoreServiceProvider);
     final db = ref.read(vaultDatabaseProvider);
+
+    if (!await keystore.verifyMasterPassword(password)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Incorrect master password')),
+        );
+      }
+      return;
+    }
 
     try {
       await db.rekey(password);
@@ -780,6 +984,111 @@ class _PinTileState extends ConsumerState<_PinTile> {
             child: const Text('Confirm'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Accent picker for the Personal Theme setting. Changes apply live — the whole
+/// app re-themes as you drag — so there is no separate preview to keep in sync.
+class _AccentPickerDialog extends ConsumerStatefulWidget {
+  const _AccentPickerDialog();
+
+  @override
+  ConsumerState<_AccentPickerDialog> createState() =>
+      _AccentPickerDialogState();
+}
+
+class _AccentPickerDialogState extends ConsumerState<_AccentPickerDialog> {
+  void _apply(Color color) {
+    ref.read(accentColorProvider.notifier).state = color;
+    ref.read(keystoreServiceProvider).storeAccentColor(color.toARGB32());
+  }
+
+  void _reset() {
+    ref.read(accentColorProvider.notifier).state = Palette.primary;
+    ref.read(keystoreServiceProvider).clearAccentColor();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected = ref.watch(accentColorProvider);
+    final hue = HSLColor.fromColor(selected).hue;
+
+    return AlertDialog(
+      title: const Text('Personal Theme'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Accent color', style: theme.textTheme.labelMedium),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final (name, color) in Palette.accentPresets)
+                _swatch(color, name, selected),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text('Custom hue', style: theme.textTheme.labelMedium),
+          Slider(
+            value: hue,
+            max: 360,
+            onChanged: (h) =>
+                _apply(HSLColor.fromAHSL(1, h, 0.72, 0.52).toColor()),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: () {},
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Token'),
+                style: FilledButton.styleFrom(shape: const StadiumBorder()),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(onPressed: () {}, child: const Text('Preview')),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: _reset, child: const Text('Reset')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+
+  Widget _swatch(Color color, String name, Color selected) {
+    final isSelected = color.toARGB32() == selected.toARGB32();
+    return Tooltip(
+      message: name,
+      child: InkWell(
+        onTap: () => _apply(color),
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
+          child: isSelected
+              ? Icon(Icons.check, size: 20, color: AppTheme.onAccent(color))
+              : null,
+        ),
       ),
     );
   }

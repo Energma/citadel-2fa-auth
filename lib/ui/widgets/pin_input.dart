@@ -9,6 +9,12 @@ class PinInput extends StatefulWidget {
   final String title;
   final String subtitle;
 
+  /// When non-null, a submit button with this label is shown and the PIN is
+  /// only submitted when it's tapped (so the user can review/correct first).
+  /// When null, the PIN auto-submits once all digits are entered — used for
+  /// the fast unlock screen.
+  final String? submitLabel;
+
   const PinInput({
     super.key,
     this.length = 6,
@@ -16,6 +22,7 @@ class PinInput extends StatefulWidget {
     this.error,
     this.title = 'Enter PIN',
     this.subtitle = '',
+    this.submitLabel,
   });
 
   @override
@@ -42,7 +49,10 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(PinInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.error != null && oldWidget.error == null) {
+    // Shake and clear whenever a new error arrives — not just the first one.
+    // Comparing values (rather than null→non-null) means a second consecutive
+    // wrong PIN still resets the dots so the user can re-enter.
+    if (widget.error != null && widget.error != oldWidget.error) {
       _shakeController.forward().then((_) => _shakeController.reverse());
       setState(() => _pin = '');
     }
@@ -58,9 +68,22 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     if (_pin.length >= widget.length) return;
     HapticFeedback.lightImpact();
     setState(() => _pin += digit.toString());
-    if (_pin.length == widget.length) {
-      widget.onCompleted(_pin);
+    // Auto-submit only when there's no explicit submit button (fast unlock).
+    // Clear the entered PIN as we submit so the dots reset for the next try
+    // even when the error message is identical to the previous attempt's.
+    if (_pin.length == widget.length && widget.submitLabel == null) {
+      final value = _pin;
+      setState(() => _pin = '');
+      widget.onCompleted(value);
     }
+  }
+
+  void _submit() {
+    if (_pin.length != widget.length) return;
+    HapticFeedback.lightImpact();
+    final value = _pin;
+    setState(() => _pin = '');
+    widget.onCompleted(value);
   }
 
   void _deleteDigit() {
@@ -78,16 +101,23 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
       children: [
         Text(
           widget.title,
+          textAlign: TextAlign.center,
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w700,
           ),
         ),
         if (widget.subtitle.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(
-            widget.subtitle,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withAlpha(140),
+          // Without the padding the subtitle grows to the full column width and
+          // its wrapped lines sit flush against both screen edges.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              widget.subtitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withAlpha(140),
+              ),
             ),
           ),
         ],
@@ -110,16 +140,15 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
                   duration: const Duration(milliseconds: 150),
                   width: filled ? 16 : 14,
                   height: filled ? 16 : 14,
+                  // On a wrong PIN the dots simply reset to their empty,
+                  // unfilled state — the error is conveyed by the live message
+                  // (and the shake) rather than by recoloring the circles red.
                   decoration: BoxDecoration(
-                    color: widget.error != null
-                        ? theme.colorScheme.error
-                        : filled
-                            ? theme.colorScheme.primary
-                            : Colors.transparent,
+                    color: filled
+                        ? theme.colorScheme.primary
+                        : Colors.transparent,
                     border: Border.all(
-                      color: widget.error != null
-                          ? theme.colorScheme.error
-                          : theme.colorScheme.primary.withAlpha(filled ? 255 : 80),
+                      color: theme.colorScheme.primary.withAlpha(filled ? 255 : 80),
                       width: 2,
                     ),
                     shape: BoxShape.circle,
@@ -178,6 +207,19 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
             ],
           ),
         ),
+
+        // Explicit submit button (when enabled) — lets the user review and
+        // correct the PIN before confirming instead of auto-submitting.
+        if (widget.submitLabel != null) ...[
+          const SizedBox(height: 28),
+          SizedBox(
+            width: 280,
+            child: ElevatedButton(
+              onPressed: _pin.length == widget.length ? _submit : null,
+              child: Text(widget.submitLabel!),
+            ),
+          ),
+        ],
       ],
     );
   }

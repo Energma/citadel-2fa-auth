@@ -45,25 +45,6 @@ class OtpEngine {
     return elapsed / token.period;
   }
 
-  /// Generate Steam Guard token (uses custom character set).
-  static String generateSteamCode(Token token, {DateTime? time}) {
-    const steamChars = '23456789BCDFGHJKMNPQRTVWXY';
-    final now = time ?? DateTime.now();
-    final timeStep = now.millisecondsSinceEpoch ~/ 1000 ~/ 30;
-
-    final key = _decodeSecret(token.secret);
-    final msg = _int64ToBytes(timeStep);
-    final hash = _hmac(key, msg, Algorithm.sha1);
-    var code = _truncate(hash);
-
-    final buf = StringBuffer();
-    for (var i = 0; i < 5; i++) {
-      buf.write(steamChars[code % steamChars.length]);
-      code ~/= steamChars.length;
-    }
-    return buf.toString();
-  }
-
   // --- Internal RFC 4226 implementation ---
 
   static String _generateCode(String secret, int counter, int digits, Algorithm algorithm) {

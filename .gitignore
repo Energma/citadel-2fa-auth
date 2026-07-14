@@ -39,6 +39,13 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Release artifacts and signing secrets — never commit these
+*.apk
+*.aab
+*.jks
+*.keystore
+/android/key.properties
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
@@ -49,3 +56,8 @@ app.*.map.json
 
 # Local dev script
 dev.sh
+# Android module build output
+android/build/
+
+# Release artifacts produced by ./dev.sh release
+product/

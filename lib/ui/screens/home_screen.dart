@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../theme/palette.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../widgets/token_card.dart';
+import '../widgets/master_password_dialog.dart';
 import 'add_token_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
@@ -86,33 +86,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _deleteToken(String id) async {
-    final confirmed = await showDialog<bool>(
+    // Deleting permanently loses data. A single master-password step is both
+    // the confirmation and the authentication — no separate confirm dialog, so
+    // the destructive warning lives here alongside the password prompt.
+    await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Token'),
-        content: const Text(
-          'This will permanently remove this token. You may lose access to the associated account if you don\'t have a backup.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Delete',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        ],
+      builder: (pwdCtx) => MasterPasswordDialog(
+        title: 'Delete Token',
+        subtitle:
+            'This permanently removes the token — you may lose access to the '
+            'account if you don\'t have a backup. Enter your master password to '
+            'confirm.',
+        onConfirm: () async {
+          await ref.read(tokenRepositoryProvider).delete(id);
+          ref.invalidate(tokenListProvider);
+        },
       ),
     );
-
-    if (confirmed == true) {
-      await ref.read(tokenRepositoryProvider).delete(id);
-      ref.invalidate(tokenListProvider);
-    }
   }
 
   @override
@@ -135,12 +125,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
             body: tokens.when(
               data: (tokenList) {
-                if (tokenList.isEmpty) return _buildEmptyState(theme);
                 return groups.when(
-                  data: (groupList) =>
-                      _buildTokenList(tokenList, groupList),
-                  loading: () => _buildTokenList(tokenList, []),
-                  error: (_, _) => _buildTokenList(tokenList, []),
+                  // Only truly empty when there are no groups either — an empty
+                  // group is structure the user created and should still see.
+                  data: (groupList) => tokenList.isEmpty && groupList.isEmpty
+                      ? _buildEmptyState(theme)
+                      : _buildTokenList(tokenList, groupList),
+                  loading: () => tokenList.isEmpty
+                      ? _buildEmptyState(theme)
+                      : _buildTokenList(tokenList, []),
+                  error: (_, _) => tokenList.isEmpty
+                      ? _buildEmptyState(theme)
+                      : _buildTokenList(tokenList, []),
                 );
               },
               loading: () =>
@@ -148,7 +144,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               error: (e, _) => Center(child: Text('Error: $e')),
             ),
           ),
-          floatingActionButton: _buildFab(theme),
         );
       },
       loading: () => const Scaffold(
@@ -188,6 +183,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ],
             ),
       actions: [
+        Tooltip(
+          message: 'Add Key',
+          child: FilledButton.icon(
+            icon: const Icon(Icons.add_rounded, size: 20),
+            label: const Text('Token'),
+            onPressed: _openAddToken,
+            style: FilledButton.styleFrom(
+              // Drive both colors off the accent so the icon and label stay
+              // readable on any accent, in light and dark.
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              shape: const StadiumBorder(),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
         IconButton(
           icon: AnimatedSwitcher(
             duration: const Duration(milliseconds: 200),
@@ -348,11 +362,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       grouped.putIfAbsent(t.groupId, () => []).add(t);
     }
 
-    final ungrouped = grouped.remove(null) ?? [];
+    final ungrouped = grouped.remove(null) ?? <Token>[];
 
     // All groups (even empty ones) so user sees the structure
     final orderedGroups = groups.toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    // A token can reference a group we aren't showing (deleted group, or one
+    // owned by another profile). Fold it into General so it can never become
+    // invisible just because its section is missing.
+    final shownGroupIds = orderedGroups.map((g) => g.id).toSet();
+    for (final entry in grouped.entries) {
+      if (!shownGroupIds.contains(entry.key)) ungrouped.addAll(entry.value);
+    }
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -515,20 +537,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  Future<void> _reorderTokens(
-      List<dynamic> tokenList, int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex--;
-    final item = tokenList.removeAt(oldIndex);
-    tokenList.insert(newIndex, item);
-
-    final orders = <String, int>{};
-    for (var i = 0; i < tokenList.length; i++) {
-      orders[tokenList[i].id] = i;
-    }
-    await ref.read(tokenRepositoryProvider).updateSortOrders(orders);
-    ref.invalidate(tokenListProvider);
-  }
-
   void _showMoveDialog(Token token) async {
     final profiles = _profiles;
     final groups = ref.read(groupListProvider).valueOrNull ?? [];
@@ -644,27 +652,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.invalidate(tokenListProvider);
   }
 
-  Widget _buildFab(ThemeData theme) {
-    final isDark = theme.brightness == Brightness.dark;
-    return FloatingActionButton.extended(
-      onPressed: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AddTokenScreen()),
-        );
-        ref.invalidate(tokenListProvider);
-        ref.invalidate(groupListProvider);
-      },
-      elevation: 3,
-      backgroundColor: isDark ? Palette.darkCard : Palette.darkBg,
-      foregroundColor: Palette.accent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      icon: const Icon(Icons.lock_open_rounded, size: 22),
-      label: const Text(
-        'Add Key',
-        style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5),
-      ),
+  Future<void> _openAddToken() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddTokenScreen()),
     );
+    ref.invalidate(tokenListProvider);
+    ref.invalidate(groupListProvider);
   }
 
   Widget _buildEmptyState(ThemeData theme) {

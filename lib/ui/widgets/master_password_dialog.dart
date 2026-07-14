@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
 
-class MasterPasswordDialog extends StatefulWidget {
+class MasterPasswordDialog extends ConsumerStatefulWidget {
   final Future<void> Function() onConfirm;
   final VoidCallback? onCancel;
   final String title;
@@ -15,10 +17,11 @@ class MasterPasswordDialog extends StatefulWidget {
   });
 
   @override
-  State<MasterPasswordDialog> createState() => _MasterPasswordDialogState();
+  ConsumerState<MasterPasswordDialog> createState() =>
+      _MasterPasswordDialogState();
 }
 
-class _MasterPasswordDialogState extends State<MasterPasswordDialog> {
+class _MasterPasswordDialogState extends ConsumerState<MasterPasswordDialog> {
   final _controller = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
@@ -37,9 +40,24 @@ class _MasterPasswordDialogState extends State<MasterPasswordDialog> {
       return;
     }
 
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final valid =
+        await ref.read(keystoreServiceProvider).verifyMasterPassword(password);
+    if (!valid) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Incorrect master password';
+        });
+      }
+      return;
+    }
+
     try {
-      // TODO: Validate master password against stored hash
       await widget.onConfirm();
       if (mounted) Navigator.pop(context);
     } catch (e) {

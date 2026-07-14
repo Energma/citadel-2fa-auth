@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../data/database/vault_database.dart';
 import '../data/repositories/token_repository.dart';
 import '../data/repositories/profile_repository.dart';
 import '../platform/biometric_service.dart';
 import '../platform/keystore_service.dart';
+import '../ui/theme/palette.dart';
 import 'models/token.dart';
 import 'models/profile.dart';
 
@@ -104,10 +106,25 @@ final groupListProvider = FutureProvider<List<TokenGroup>>((ref) async {
   final vault = ref.watch(vaultProvider);
   if (vault.status != VaultStatus.unlocked) return [];
 
+  final repo = ref.read(profileRepositoryProvider);
   final activeProfileId = ref.watch(activeProfileIdProvider);
-  if (activeProfileId == null) return [];
 
-  return ref.read(profileRepositoryProvider).getGroupsByProfile(activeProfileId);
+  // No active profile means "All profiles" — match tokenListProvider and show
+  // every group, otherwise grouped tokens have no section to render into.
+  if (activeProfileId == null) return repo.getAllGroups();
+
+  return repo.getGroupsByProfile(activeProfileId);
+});
+
+/// Groups for one specific profile, independent of the active profile. The
+/// Profiles & Groups screen picks a profile from a dropdown, so it can't use
+/// [groupListProvider] — and it needs something invalidatable, or the list goes
+/// stale the moment a group is added.
+final groupsByProfileProvider =
+    FutureProvider.family<List<TokenGroup>, String>((ref, profileId) async {
+  final vault = ref.watch(vaultProvider);
+  if (vault.status != VaultStatus.unlocked) return [];
+  return ref.read(profileRepositoryProvider).getGroupsByProfile(profileId);
 });
 
 // --- Search ---
@@ -118,6 +135,13 @@ final searchResultsProvider = FutureProvider<List<Token>>((ref) async {
   final query = ref.watch(searchQueryProvider);
   if (query.isEmpty) return [];
   return ref.read(tokenRepositoryProvider).search(query);
+});
+
+// --- App version ---
+
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return info.version;
 });
 
 // --- Biometric ---
@@ -138,6 +162,10 @@ final autoLockDurationProvider = StateProvider<Duration>((ref) => const Duration
 
 final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 
+/// Personal Theme accent. Drives buttons, chips and highlights; surfaces keep
+/// the house palette. Defaults to the brand color until the user picks one.
+final accentColorProvider = StateProvider<Color>((ref) => Palette.primary);
+
 /// Load persisted settings from keystore on app start.
 Future<void> loadPersistedSettings(ProviderContainer container) async {
   final keystore = container.read(keystoreServiceProvider);
@@ -151,4 +179,9 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
   };
+
+  final accent = await keystore.getAccentColor();
+  if (accent != null) {
+    container.read(accentColorProvider.notifier).state = Color(accent);
+  }
 }

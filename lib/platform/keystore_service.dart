@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Platform-secure key storage using Android Keystore / iOS Keychain.
@@ -14,8 +15,11 @@ class KeystoreService {
   static const _biometricEnabledKey = 'citadel_biometric_enabled';
   static const _autoLockMinutesKey = 'citadel_auto_lock_minutes';
   static const _themeModeKey = 'citadel_theme_mode';
-  static const _pinHashKey = 'citadel_pin_hash';
+  static const _accentColorKey = 'citadel_accent_color';
+  static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
+  static const _pinAttemptsKey = 'citadel_pin_attempts';
+  static const _pinLockoutUntilKey = 'citadel_pin_lockout_until';
   static const _masterPasswordKey = 'citadel_master_password';
 
   /// Store the derived vault key in secure storage.
@@ -64,21 +68,57 @@ class KeystoreService {
     return value == 'true';
   }
 
-  /// Store the SHA-256 hash of the PIN for quick validation.
-  Future<void> storePinHash(String hash) async {
-    await _storage.write(key: _pinHashKey, value: hash);
-    await _storage.write(key: _pinEnabledKey, value: 'true');
+  /// Mark PIN unlock as enabled. The PIN itself is never stored — it is part of
+  /// the vault passphrase, so successfully decrypting the database IS the check.
+  /// This avoids keeping any PIN-derived secret (a brute-forceable target for a
+  /// 6-digit PIN) in storage.
+  Future<void> setPinEnabled(bool enabled) async {
+    await _storage.write(key: _pinEnabledKey, value: enabled.toString());
+    // Clear any legacy hash from older builds.
+    await _storage.delete(key: _pinHashKey);
+    // A freshly (re)configured PIN starts with a clean attempt history.
+    if (enabled) await resetPinLockout();
   }
 
-  /// Get the stored PIN hash.
-  Future<String?> getPinHash() async {
-    return _storage.read(key: _pinHashKey);
-  }
-
-  /// Clear PIN (disable).
+  /// Clear PIN (disable) and any legacy stored hash.
   Future<void> clearPin() async {
     await _storage.delete(key: _pinHashKey);
     await _storage.write(key: _pinEnabledKey, value: 'false');
+    await resetPinLockout();
+  }
+
+  // --- Brute-force lockout (persisted so it survives app restarts) ---
+
+  /// Number of consecutive wrong PIN attempts.
+  Future<int> getPinAttempts() async {
+    return int.tryParse(await _storage.read(key: _pinAttemptsKey) ?? '') ?? 0;
+  }
+
+  Future<void> setPinAttempts(int attempts) async {
+    await _storage.write(key: _pinAttemptsKey, value: attempts.toString());
+  }
+
+  /// Time until which PIN entry is locked out, or null if not locked.
+  Future<DateTime?> getPinLockoutUntil() async {
+    final ms = int.tryParse(await _storage.read(key: _pinLockoutUntilKey) ?? '');
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  Future<void> setPinLockoutUntil(DateTime? until) async {
+    if (until == null) {
+      await _storage.delete(key: _pinLockoutUntilKey);
+    } else {
+      await _storage.write(
+        key: _pinLockoutUntilKey,
+        value: until.millisecondsSinceEpoch.toString(),
+      );
+    }
+  }
+
+  /// Reset the attempt counter and clear any active lockout.
+  Future<void> resetPinLockout() async {
+    await _storage.delete(key: _pinAttemptsKey);
+    await _storage.delete(key: _pinLockoutUntilKey);
   }
 
   /// Store auto-lock timeout in minutes.
@@ -102,6 +142,22 @@ class KeystoreService {
     return await _storage.read(key: _themeModeKey) ?? 'system';
   }
 
+  /// Store the Personal Theme accent color as a packed ARGB int.
+  Future<void> storeAccentColor(int argb) async {
+    await _storage.write(key: _accentColorKey, value: argb.toString());
+  }
+
+  /// Get the stored accent, or null when the user hasn't chosen one.
+  Future<int?> getAccentColor() async {
+    final value = await _storage.read(key: _accentColorKey);
+    return value == null ? null : int.tryParse(value);
+  }
+
+  /// Drop the custom accent and fall back to the house color.
+  Future<void> clearAccentColor() async {
+    await _storage.delete(key: _accentColorKey);
+  }
+
   /// Store the master password for PIN-only login.
   Future<void> storeMasterPassword(String password) async {
     await _storage.write(key: _masterPasswordKey, value: password);
@@ -115,6 +171,21 @@ class KeystoreService {
   /// Clear the stored master password.
   Future<void> clearMasterPassword() async {
     await _storage.delete(key: _masterPasswordKey);
+  }
+
+  /// Verify a candidate against the stored master password.
+  /// Returns false if no master password is stored.
+  Future<bool> verifyMasterPassword(String candidate) async {
+    final stored = await _storage.read(key: _masterPasswordKey);
+    if (stored == null) return false;
+    // Compare fixed-length digests so the comparison is constant-time.
+    final a = sha256.convert(utf8.encode(stored)).bytes;
+    final b = sha256.convert(utf8.encode(candidate)).bytes;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
   }
 
   /// Clear all stored keys (full reset).

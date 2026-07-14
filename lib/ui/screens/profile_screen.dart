@@ -32,8 +32,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profiles & Groups'),
@@ -259,30 +257,27 @@ class _ProfileTab extends ConsumerWidget {
               onPressed: () {
                 final name = nameController.text.trim();
                 if (name.isEmpty) return;
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
 
-                if (ctx.mounted) {
-                  Navigator.pop(ctx);
-                  showDialog(
-                    context: context,
-                    builder: (pwdCtx) => MasterPasswordDialog(
-                      onConfirm: () async {
-                        final repo = ref.read(profileRepositoryProvider);
-                        if (existing != null) {
-                          await repo.update(existing.copyWith(
-                            name: name,
-                            colorValue: selectedColor,
-                          ));
-                        } else {
-                          await repo.add(Profile(
-                            name: name,
-                            colorValue: selectedColor,
-                          ));
-                        }
-                        ref.invalidate(profileListProvider);
-                      },
-                    ),
-                  );
+                // Adding and editing are non-destructive — no master password.
+                Future<void> persist() async {
+                  final repo = ref.read(profileRepositoryProvider);
+                  if (existing != null) {
+                    await repo.update(existing.copyWith(
+                      name: name,
+                      colorValue: selectedColor,
+                    ));
+                  } else {
+                    await repo.add(Profile(
+                      name: name,
+                      colorValue: selectedColor,
+                    ));
+                  }
+                  ref.invalidate(profileListProvider);
                 }
+
+                persist();
               },
               child: Text(existing == null ? 'Add' : 'Save'),
             ),
@@ -410,15 +405,10 @@ class _GroupTab extends ConsumerWidget {
         profileList.firstWhereOrNull((p) => p.id == profileId);
     if (profile == null) return const SizedBox.shrink();
 
-    return FutureBuilder<List<TokenGroup>>(
-      future: ref.read(profileRepositoryProvider).getGroupsByProfile(profileId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final list = snapshot.data ?? [];
-
+    return ref.watch(groupsByProfileProvider(profileId)).when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error: $e')),
+      data: (list) {
         return Column(
           children: [
             Padding(
@@ -520,6 +510,7 @@ class _GroupTab extends ConsumerWidget {
         .read(profileRepositoryProvider)
         .updateGroupSortOrders(orders);
     ref.invalidate(groupListProvider);
+    ref.invalidate(groupsByProfileProvider);
   }
 
   void _showGroupDialog(BuildContext context, WidgetRef ref,
@@ -570,30 +561,27 @@ class _GroupTab extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final name = nameController.text.trim();
               if (name.isEmpty) return;
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
 
-              if (ctx.mounted) {
-                Navigator.pop(ctx);
-                showDialog(
-                  context: context,
-                  builder: (pwdCtx) => MasterPasswordDialog(
-                    onConfirm: () async {
-                      final repo = ref.read(profileRepositoryProvider);
-                      if (existing != null) {
-                        await repo.updateGroup(existing.copyWith(name: name));
-                      } else {
-                        await repo.addGroup(TokenGroup(
-                          profileId: profileId,
-                          name: name,
-                        ));
-                      }
-                      ref.invalidate(groupListProvider);
-                    },
-                  ),
-                );
+              // Adding and renaming are non-destructive — no master password.
+              // Awaited, not fire-and-forget: a swallowed database error would
+              // otherwise close the dialog as if the group had been saved.
+              final repo = ref.read(profileRepositoryProvider);
+              if (existing != null) {
+                await repo.updateGroup(existing.copyWith(name: name));
+              } else {
+                await repo.addGroup(TokenGroup(
+                  profileId: profileId,
+                  name: name,
+                ));
               }
+              // Both: the home list and the per-profile list on this screen.
+              ref.invalidate(groupListProvider);
+              ref.invalidate(groupsByProfileProvider);
             },
             child: Text(existing == null ? 'Add' : 'Save'),
           ),
@@ -631,6 +619,7 @@ class _GroupTab extends ConsumerWidget {
           onConfirm: () async {
             await ref.read(profileRepositoryProvider).deleteGroup(group.id);
             ref.invalidate(groupListProvider);
+            ref.invalidate(groupsByProfileProvider);
           },
         ),
       );

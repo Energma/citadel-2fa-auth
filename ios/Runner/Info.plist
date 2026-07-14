@@ -4,6 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Citadel Auth uses the camera to scan QR codes when adding 2FA accounts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Citadel Auth reads QR code images from your photo library when importing 2FA accounts.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Citadel Auth uses Face ID to unlock your encrypted vault.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
