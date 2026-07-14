@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Strip AI/assistant attribution trailers from commit messages.
+# Energma policy: commits are authored by people, not tools.
+set -euo pipefail
+msg_file="$1"
+
+# Drop Co-Authored-By lines naming Claude/Anthropic, and the
+# "Generated with Claude Code" advert line, plus any blank tail they leave.
+sed -i -E \
+  -e '/^[[:space:]]*Co-[Aa]uthored-[Bb]y:.*(Claude|Anthropic|noreply@anthropic\.com).*$/Id' \
+  -e '/^[[:space:]]*🤖?[[:space:]]*Generated with .*Claude Code.*$/Id' \
+  "$msg_file"
+
+# Collapse trailing blank lines left behind.
+awk 'BEGIN{RS="";ORS="\n\n"}{print}' "$msg_file" > "$msg_file.tmp" 2>/dev/null && mv "$msg_file.tmp" "$msg_file" || true

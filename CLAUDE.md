@@ -63,3 +63,10 @@ The app uses a vault state machine: `Uninitialized → Locked → Unlocked`. The
 - **Add a provider:** Add to `lib/core/providers.dart` with `@riverpod` annotation, then run `./dev.sh build`
 - **Modify models:** Edit in `lib/core/models/`, run `./dev.sh build` for JSON serialization
 - **Database schema change:** Update `lib/data/database/vault_database.dart`, increment version, add migration
+
+## Commit policy
+
+Never add AI/assistant attribution to commits or PRs — no `Co-Authored-By: Claude`,
+no "Generated with Claude Code". Commits are authored by people. A `commit-msg` hook
+in `.githooks/` strips these automatically; the repo sets `core.hooksPath=.githooks`.
+After cloning, run `git config core.hooksPath .githooks` to enable it.
