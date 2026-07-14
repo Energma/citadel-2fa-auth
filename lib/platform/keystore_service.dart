@@ -15,6 +15,7 @@ class KeystoreService {
   static const _biometricEnabledKey = 'citadel_biometric_enabled';
   static const _autoLockMinutesKey = 'citadel_auto_lock_minutes';
   static const _themeModeKey = 'citadel_theme_mode';
+  static const _accentColorKey = 'citadel_accent_color';
   static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
   static const _pinAttemptsKey = 'citadel_pin_attempts';
@@ -139,6 +140,22 @@ class KeystoreService {
   /// Get stored theme mode (default: 'system').
   Future<String> getThemeMode() async {
     return await _storage.read(key: _themeModeKey) ?? 'system';
+  }
+
+  /// Store the Personal Theme accent color as a packed ARGB int.
+  Future<void> storeAccentColor(int argb) async {
+    await _storage.write(key: _accentColorKey, value: argb.toString());
+  }
+
+  /// Get the stored accent, or null when the user hasn't chosen one.
+  Future<int?> getAccentColor() async {
+    final value = await _storage.read(key: _accentColorKey);
+    return value == null ? null : int.tryParse(value);
+  }
+
+  /// Drop the custom accent and fall back to the house color.
+  Future<void> clearAccentColor() async {
+    await _storage.delete(key: _accentColorKey);
   }
 
   /// Store the master password for PIN-only login.

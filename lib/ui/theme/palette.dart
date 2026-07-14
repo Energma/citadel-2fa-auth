@@ -40,4 +40,18 @@ class Palette {
     Color(0xFF22C55E), // Green
     Color(0xFF64748B), // Slate
   ];
+
+  // ─── Personal theme accent presets ───
+  /// Selectable accents for the Personal Theme setting. These override
+  /// [primary]/[secondary] only — surfaces and cards keep the house palette.
+  static const List<(String, Color)> accentPresets = [
+    ('Cyan', primary),
+    ('Mint', accent),
+    ('Sky', Color(0xFF0EA5E9)),
+    ('Violet', Color(0xFF8B5CF6)),
+    ('Green', Color(0xFF22C55E)),
+    ('Amber', Color(0xFFF59E0B)),
+    ('Rose', Color(0xFFEC4899)),
+    ('Red', Color(0xFFEF4444)),
+  ];
 }

@@ -48,12 +48,13 @@ class _CitadelAppState extends ConsumerState<CitadelApp> {
   Widget build(BuildContext context) {
     final vault = ref.watch(vaultProvider);
     final themeMode = ref.watch(themeModeProvider);
+    final accent = ref.watch(accentColorProvider);
 
     return MaterialApp(
       title: 'Citadel Auth',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme(accent),
+      darkTheme: AppTheme.darkTheme(accent),
       themeMode: themeMode,
       home: !_splashDone
           ? SplashScreen(onComplete: () => setState(() => _splashDone = true))

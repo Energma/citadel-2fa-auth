@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
+import '../../ui/theme/app_theme.dart';
 import '../../ui/theme/palette.dart';
 import '../widgets/master_password_dialog.dart';
 import 'pin_setup_screen.dart';
@@ -20,6 +21,7 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final themeMode = ref.watch(themeModeProvider);
+    final accent = ref.watch(accentColorProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -31,6 +33,21 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Theme'),
             subtitle: Text(_themeModeLabel(themeMode)),
             onTap: () => _showThemePicker(context, ref),
+          ),
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Personal Theme'),
+            subtitle: Text(_accentLabel(accent)),
+            trailing: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: accent,
+                shape: BoxShape.circle,
+                border: Border.all(color: theme.dividerColor),
+              ),
+            ),
+            onTap: () => _showAccentPicker(context, ref),
           ),
 
           _sectionHeader(theme, 'Security'),
@@ -83,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
           const ListTile(
             leading: Icon(Icons.code),
             title: Text('Open Source'),
-            subtitle: Text('GPL-3.0 License'),
+            subtitle: Text('Apache-2.0 License'),
           ),
           const ListTile(
             leading: Icon(Icons.privacy_tip),
@@ -208,6 +225,20 @@ class SettingsScreen extends ConsumerWidget {
           if (mode == current) const Icon(Icons.check, size: 20, color: Palette.primary),
         ],
       ),
+    );
+  }
+
+  String _accentLabel(Color accent) {
+    for (final (name, color) in Palette.accentPresets) {
+      if (color.toARGB32() == accent.toARGB32()) return name;
+    }
+    return 'Custom';
+  }
+
+  void _showAccentPicker(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (_) => const _AccentPickerDialog(),
     );
   }
 
@@ -953,6 +984,111 @@ class _PinTileState extends ConsumerState<_PinTile> {
             child: const Text('Confirm'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Accent picker for the Personal Theme setting. Changes apply live — the whole
+/// app re-themes as you drag — so there is no separate preview to keep in sync.
+class _AccentPickerDialog extends ConsumerStatefulWidget {
+  const _AccentPickerDialog();
+
+  @override
+  ConsumerState<_AccentPickerDialog> createState() =>
+      _AccentPickerDialogState();
+}
+
+class _AccentPickerDialogState extends ConsumerState<_AccentPickerDialog> {
+  void _apply(Color color) {
+    ref.read(accentColorProvider.notifier).state = color;
+    ref.read(keystoreServiceProvider).storeAccentColor(color.toARGB32());
+  }
+
+  void _reset() {
+    ref.read(accentColorProvider.notifier).state = Palette.primary;
+    ref.read(keystoreServiceProvider).clearAccentColor();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected = ref.watch(accentColorProvider);
+    final hue = HSLColor.fromColor(selected).hue;
+
+    return AlertDialog(
+      title: const Text('Personal Theme'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Accent color', style: theme.textTheme.labelMedium),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final (name, color) in Palette.accentPresets)
+                _swatch(color, name, selected),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text('Custom hue', style: theme.textTheme.labelMedium),
+          Slider(
+            value: hue,
+            max: 360,
+            onChanged: (h) =>
+                _apply(HSLColor.fromAHSL(1, h, 0.72, 0.52).toColor()),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: () {},
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text('Token'),
+                style: FilledButton.styleFrom(shape: const StadiumBorder()),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(onPressed: () {}, child: const Text('Preview')),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: _reset, child: const Text('Reset')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+
+  Widget _swatch(Color color, String name, Color selected) {
+    final isSelected = color.toARGB32() == selected.toARGB32();
+    return Tooltip(
+      message: name,
+      child: InkWell(
+        onTap: () => _apply(color),
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
+          child: isSelected
+              ? Icon(Icons.check, size: 20, color: AppTheme.onAccent(color))
+              : null,
+        ),
       ),
     );
   }
