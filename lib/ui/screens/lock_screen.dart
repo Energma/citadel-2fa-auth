@@ -20,20 +20,38 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   String? _error;
   bool _showPinInput = false;
   String? _pinError;
+  bool _biometricUsable = false;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    _initializePinState();
-    _tryBiometric();
+    _initializeLockState();
   }
 
   static const _maxAttemptsBeforeLockout = 5;
 
-  Future<void> _initializePinState() async {
-    final pinEnabled = await ref.read(keystoreServiceProvider).isPinEnabled();
+  /// Work out which unlock method this device actually has before rendering, so
+  /// we never flash the master password screen at someone who unlocks with a
+  /// fingerprint. The password is a deliberate fallback, not the default.
+  Future<void> _initializeLockState() async {
+    final keystore = ref.read(keystoreServiceProvider);
+    final biometric = ref.read(biometricServiceProvider);
+
+    final pinEnabled = await keystore.isPinEnabled();
+    final biometricEnabled = await keystore.isBiometricEnabled();
+    // Enabled in settings is not enough — the device must still be able to do
+    // it (credential removed, biometrics unenrolled).
+    final biometricUsable = biometricEnabled && await biometric.isAvailable();
+
     if (!mounted) return;
-    setState(() => _showPinInput = pinEnabled); // Show PIN pad if enabled
+    setState(() {
+      _showPinInput = pinEnabled;
+      _biometricUsable = biometricUsable;
+      _initialized = true;
+    });
+
+    if (biometricUsable) await _tryBiometric();
   }
 
   @override
@@ -42,25 +60,20 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     super.dispose();
   }
 
+  /// Prompt for the device credential. Safe to call again — cancelling just
+  /// leaves the user on the lock screen with the Verify button still there.
   Future<void> _tryBiometric() async {
     final biometric = ref.read(biometricServiceProvider);
     final keystore = ref.read(keystoreServiceProvider);
 
-    final enabled = await keystore.isBiometricEnabled();
-    if (!enabled) return;
-
-    final available = await biometric.isAvailable();
-    if (!available) return;
-
     final success = await biometric.authenticate();
-    if (success && mounted) {
-      final key = await keystore.getVaultKey();
-      if (key != null) {
-        // The stored key is the full passphrase (password+pin) encoded as UTF-8
-        final passphrase = String.fromCharCodes(key);
-        await _unlock(passphrase);
-      }
-    }
+    if (!success || !mounted) return;
+
+    final key = await keystore.getVaultKey();
+    if (key == null) return;
+
+    // The stored key is the full passphrase (password+pin) encoded as UTF-8.
+    await _unlock(String.fromCharCodes(key));
   }
 
   Future<void> _handlePasswordSubmit() async {
@@ -170,9 +183,11 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           children: [
             Expanded(
               child: Center(
-                child: _showPinInput
-                    ? _buildPinView(theme)
-                    : _buildPasswordView(theme),
+                child: !_initialized
+                    ? const CircularProgressIndicator()
+                    : _showPinInput
+                        ? _buildPinView(theme)
+                        : _buildPasswordView(theme),
               ),
             ),
             // Footer with links and Powered by Energma
@@ -313,17 +328,69 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   : const Text('Unlock'),
             ),
           ),
+          if (_biometricUsable) _buildBiometricAction(theme),
         ],
       ),
     );
   }
 
   Widget _buildPinView(ThemeData theme) {
-    return PinInput(
-      onCompleted: _handlePinCompleted,
-      error: _pinError,
-      title: 'Enter PIN',
-      subtitle: 'Enter your 6-digit PIN to unlock',
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PinInput(
+          onCompleted: _handlePinCompleted,
+          error: _pinError,
+          title: 'Enter PIN',
+          subtitle: 'Enter your 6-digit PIN to unlock',
+        ),
+        if (_biometricUsable)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: _buildBiometricAction(theme),
+          ),
+      ],
+    );
+  }
+
+  /// Re-trigger the device prompt from the same screen. The automatic attempt on
+  /// open can be cancelled or mis-scanned; without this the only way back to
+  /// biometrics was to force-quit the app.
+  Widget _buildBiometricAction(ThemeData theme) {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(child: Divider(color: theme.dividerColor)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'or',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withAlpha(120),
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: theme.dividerColor)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _tryBiometric,
+            icon: const Icon(Icons.fingerprint, size: 22),
+            label: const Text('Verify to unlock Citadel Auth'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
