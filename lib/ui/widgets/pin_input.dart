@@ -101,16 +101,23 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
       children: [
         Text(
           widget.title,
+          textAlign: TextAlign.center,
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.w700,
           ),
         ),
         if (widget.subtitle.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(
-            widget.subtitle,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withAlpha(140),
+          // Without the padding the subtitle grows to the full column width and
+          // its wrapped lines sit flush against both screen edges.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              widget.subtitle,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withAlpha(140),
+              ),
             ),
           ),
         ],
