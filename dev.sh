@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+android_build() { flutter build apk --debug; }
+ios_build() { flutter build ios --simulator --debug; }
+ios_device_build() { flutter build ios --release --no-codesign; }
+ipa_build() { flutter build ipa --export-options-plist=ios/ExportOptions.plist; }
+
 case "${1:-}" in
   start)
     flutter run
@@ -12,14 +17,20 @@ case "${1:-}" in
     flutter pub run build_runner build --delete-conflicting-outputs
     case "${2:-}" in
       android)
-        flutter build apk --debug
+        android_build
         ;;
       ios)
-        flutter build ios --simulator --debug
+        ios_build
+        ;;
+      ios-device)
+        ios_device_build
+        ;;
+      ipa)
+        ipa_build
         ;;
       "") ;;
       *)
-        echo "Usage: ./dev.sh build [android|ios]"
+        echo "Usage: ./dev.sh build [android|ios|ios-device|ipa]"
         exit 1
         ;;
     esac
@@ -32,13 +43,19 @@ case "${1:-}" in
     flutter pub get
     ;;
   android)
-    flutter build apk --debug
+    android_build
     ;;
   ios)
-    flutter build ios --simulator --debug
+    ios_build
+    ;;
+  ios-device)
+    ios_device_build
+    ;;
+  ipa)
+    ipa_build
     ;;
   *)
-    echo "Usage: ./dev.sh {start|get|build [android|ios]|test|clean|android|ios}"
+    echo "Usage: ./dev.sh {start|get|build [android|ios|ios-device|ipa]|test|clean|android|ios|ios-device|ipa}"
     exit 1
     ;;
 esac
