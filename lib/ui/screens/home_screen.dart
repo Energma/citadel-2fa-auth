@@ -185,15 +185,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       actions: [
         Tooltip(
           message: 'Add Key',
-          child: FilledButton.icon(
+          child: OutlinedButton.icon(
             icon: const Icon(Icons.add_rounded, size: 20),
             label: const Text('Token'),
             onPressed: _openAddToken,
-            style: FilledButton.styleFrom(
-              // Drive both colors off the accent so the icon and label stay
-              // readable on any accent, in light and dark.
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
+            style: OutlinedButton.styleFrom(
+              // Accent-colored outline and content on the app background, so
+              // the button follows both the accent and light/dark theme.
+              foregroundColor: theme.colorScheme.primary,
+              side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
               shape: const StadiumBorder(),
               padding: const EdgeInsets.symmetric(horizontal: 14),
               visualDensity: VisualDensity.compact,
