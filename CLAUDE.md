@@ -11,11 +11,13 @@ Always use the `./dev.sh` helper script instead of running Flutter directly:
 ```bash
 ./dev.sh start   # Launch emulator + run app
 ./dev.sh get     # pub get
-./dev.sh build   # build_runner code generation
-./dev.sh test    # Run tests
-./dev.sh clean   # Clean + re-get
-./dev.sh android # Build debug APK
-./dev.sh ios     # Build debug iOS app (simulator)
+./dev.sh build          # build_runner code generation
+./dev.sh build android  # build_runner, then build debug APK
+./dev.sh build ios      # build_runner, then build debug iOS app (simulator)
+./dev.sh test           # Run tests
+./dev.sh clean          # Clean + re-get
+./dev.sh android        # Build debug APK
+./dev.sh ios            # Build debug iOS app (simulator)
 ```
 
 The project uses FVM — all Flutter commands go through `fvm flutter`.

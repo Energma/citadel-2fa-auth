@@ -10,6 +10,19 @@ case "${1:-}" in
     ;;
   build)
     flutter pub run build_runner build --delete-conflicting-outputs
+    case "${2:-}" in
+      android)
+        flutter build apk --debug
+        ;;
+      ios)
+        flutter build ios --simulator --debug
+        ;;
+      "") ;;
+      *)
+        echo "Usage: ./dev.sh build [android|ios]"
+        exit 1
+        ;;
+    esac
     ;;
   test)
     flutter test
@@ -25,7 +38,7 @@ case "${1:-}" in
     flutter build ios --simulator --debug
     ;;
   *)
-    echo "Usage: ./dev.sh {start|get|build|test|clean|android|ios}"
+    echo "Usage: ./dev.sh {start|get|build [android|ios]|test|clean|android|ios}"
     exit 1
     ;;
 esac
