@@ -14,6 +14,8 @@ Always use the `./dev.sh` helper script instead of running Flutter directly:
 ./dev.sh build   # build_runner code generation
 ./dev.sh test    # Run tests
 ./dev.sh clean   # Clean + re-get
+./dev.sh android # Build debug APK
+./dev.sh ios     # Build debug iOS app (simulator)
 ```
 
 The project uses FVM — all Flutter commands go through `fvm flutter`.

@@ -54,8 +54,6 @@ app.*.map.json
 # FVM Version Cache
 .fvm/
 
-# Local dev script
-dev.sh
 # Android module build output
 android/build/
 
