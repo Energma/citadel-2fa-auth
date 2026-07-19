@@ -457,6 +457,16 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  /// Readable, sortable backup name — the date and token count tell the user
+  /// which backup is which long after the export (epoch stamps didn't).
+  String _exportFileName(int tokenCount, String extension) {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final stamp =
+        '${now.year}-${two(now.month)}-${two(now.day)}_${two(now.hour)}${two(now.minute)}';
+    return 'citadel-backup-$stamp-$tokenCount-tokens.$extension';
+  }
+
   Future<void> _exportTokens(BuildContext context, WidgetRef ref, {required bool encrypted}) async {
     final tokens = await ref.read(tokenRepositoryProvider).getAll();
     if (tokens.isEmpty) {
@@ -475,7 +485,7 @@ class SettingsScreen extends ConsumerWidget {
     // secrets never leave the phone via email/WhatsApp/Viber/etc.
     final savedPath = await FilePicker.platform.saveFile(
       dialogTitle: 'Save backup to this device',
-      fileName: 'citadel_export_${DateTime.now().millisecondsSinceEpoch}.json',
+      fileName: _exportFileName(tokens.length, 'json'),
       bytes: utf8.encode(json),
     );
 
@@ -615,7 +625,7 @@ class SettingsScreen extends ConsumerWidget {
     // routed off the phone through messaging apps.
     final savedPath = await FilePicker.platform.saveFile(
       dialogTitle: 'Save encrypted backup to this device',
-      fileName: 'citadel_export_${DateTime.now().millisecondsSinceEpoch}.citadel.enc',
+      fileName: _exportFileName(tokens.length, 'citadel.enc'),
       bytes: utf8.encode(exportContent),
     );
 
