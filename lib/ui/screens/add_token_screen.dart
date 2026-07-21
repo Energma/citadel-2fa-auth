@@ -29,6 +29,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
   String? _profileId;
   String? _groupId;
   String? _error;
+  bool _secretRevealed = false;
 
   bool get _isEditing => widget.editToken != null;
 
@@ -63,40 +64,53 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
   Future<void> _saveToken() async {
     final issuer = _issuerController.text.trim();
     final account = _accountController.text.trim();
-    final secret = _secretController.text
-        .trim()
-        .toUpperCase()
-        .replaceAll(RegExp(r'[\s\-]'), '');
 
     if (account.isEmpty) {
       setState(() => _error = 'Account name is required');
-      return;
-    }
-    if (secret.isEmpty) {
-      setState(() => _error = 'Secret key is required');
-      return;
-    }
-    if (!OtpEngine.isValidSecret(secret)) {
-      setState(() => _error = 'Invalid Base32 secret key');
       return;
     }
 
     final repo = ref.read(tokenRepositoryProvider);
 
     if (_isEditing) {
-      final updated = widget.editToken!.copyWith(
+      // The secret and OTP parameters define code generation and are fixed
+      // by the service at enrollment — only labels and organization change.
+      // Built directly (not via copyWith) so profile/group can be cleared.
+      final t = widget.editToken!;
+      final updated = Token(
+        id: t.id,
         issuer: issuer,
         account: account,
-        secret: secret,
-        type: _type,
-        algorithm: _algorithm,
-        digits: _digits,
-        period: _period,
+        secret: t.secret,
+        type: t.type,
+        algorithm: t.algorithm,
+        digits: t.digits,
+        period: t.period,
+        counter: t.counter,
+        iconPath: t.iconPath,
         profileId: _profileId,
         groupId: _groupId,
+        tags: t.tags,
+        isPinned: t.isPinned,
+        sortOrder: t.sortOrder,
+        createdAt: t.createdAt,
       );
       await repo.update(updated);
     } else {
+      final secret = _secretController.text
+          .trim()
+          .toUpperCase()
+          .replaceAll(RegExp(r'[\s\-]'), '');
+
+      if (secret.isEmpty) {
+        setState(() => _error = 'Secret key is required');
+        return;
+      }
+      if (!OtpEngine.isValidSecret(secret)) {
+        setState(() => _error = 'Invalid Base32 secret key');
+        return;
+      }
+
       final token = Token(
         issuer: issuer,
         account: account,
@@ -314,10 +328,29 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
           const SizedBox(height: 16),
           TextField(
             controller: _secretController,
+            readOnly: _isEditing,
+            obscureText: _isEditing && !_secretRevealed,
+            // Reveal is for visual verification only — without this, a
+            // revealed read-only field still offers Select All/Copy, putting
+            // the raw seed on the system clipboard.
+            enableInteractiveSelection: !_isEditing,
             decoration: InputDecoration(
-              labelText: 'Secret Key (Base32) *',
+              labelText: _isEditing
+                  ? 'Secret Key (cannot be changed)'
+                  : 'Secret Key (Base32) *',
               hintText: 'e.g. JBSWY3DPEHPK3PXP',
               prefixIcon: const Icon(Icons.key_outlined),
+              suffixIcon: _isEditing
+                  ? IconButton(
+                      icon: Icon(_secretRevealed
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined),
+                      tooltip:
+                          _secretRevealed ? 'Hide secret' : 'Reveal secret',
+                      onPressed: () => setState(
+                          () => _secretRevealed = !_secretRevealed),
+                    )
+                  : null,
               filled: true,
               fillColor: theme.colorScheme.surface,
               border: OutlineInputBorder(
@@ -456,28 +489,32 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                       label: 'Type',
                       value: _type.name.toUpperCase(),
                       icon: Icons.code_rounded,
-                      onTap: () => _showOptionPicker<OtpType>(
-                        title: 'OTP Type',
-                        options: OtpType.values,
-                        current: _type,
-                        labelOf: (v) => v.name.toUpperCase(),
-                        onSelected: (v) =>
-                            setState(() => _type = v),
-                      ),
+                      onTap: _isEditing
+                          ? null
+                          : () => _showOptionPicker<OtpType>(
+                                title: 'OTP Type',
+                                options: OtpType.values,
+                                current: _type,
+                                labelOf: (v) => v.name.toUpperCase(),
+                                onSelected: (v) =>
+                                    setState(() => _type = v),
+                              ),
                     ),
                     right: _buildAdvancedChip(
                       theme: theme,
                       label: 'Algorithm',
                       value: _algorithm.name.toUpperCase(),
                       icon: Icons.lock_rounded,
-                      onTap: () => _showOptionPicker<Algorithm>(
-                        title: 'Algorithm',
-                        options: Algorithm.values,
-                        current: _algorithm,
-                        labelOf: (v) => v.name.toUpperCase(),
-                        onSelected: (v) =>
-                            setState(() => _algorithm = v),
-                      ),
+                      onTap: _isEditing
+                          ? null
+                          : () => _showOptionPicker<Algorithm>(
+                                title: 'Algorithm',
+                                options: Algorithm.values,
+                                current: _algorithm,
+                                labelOf: (v) => v.name.toUpperCase(),
+                                onSelected: (v) =>
+                                    setState(() => _algorithm = v),
+                              ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -488,28 +525,32 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                       label: 'Digits',
                       value: '$_digits',
                       icon: Icons.pin_rounded,
-                      onTap: () => _showOptionPicker<int>(
-                        title: 'Digits',
-                        options: [6, 7, 8],
-                        current: _digits,
-                        labelOf: (v) => '$v digits',
-                        onSelected: (v) =>
-                            setState(() => _digits = v),
-                      ),
+                      onTap: _isEditing
+                          ? null
+                          : () => _showOptionPicker<int>(
+                                title: 'Digits',
+                                options: [6, 7, 8],
+                                current: _digits,
+                                labelOf: (v) => '$v digits',
+                                onSelected: (v) =>
+                                    setState(() => _digits = v),
+                              ),
                     ),
                     right: _buildAdvancedChip(
                       theme: theme,
                       label: 'Period',
                       value: '${_period}s',
                       icon: Icons.timer_rounded,
-                      onTap: () => _showOptionPicker<int>(
-                        title: 'Period',
-                        options: [30, 60, 90],
-                        current: _period,
-                        labelOf: (v) => '${v}s',
-                        onSelected: (v) =>
-                            setState(() => _period = v),
-                      ),
+                      onTap: _isEditing
+                          ? null
+                          : () => _showOptionPicker<int>(
+                                title: 'Period',
+                                options: [30, 60, 90],
+                                current: _period,
+                                labelOf: (v) => '${v}s',
+                                onSelected: (v) =>
+                                    setState(() => _period = v),
+                              ),
                     ),
                   ),
                 ],
@@ -551,7 +592,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
     required String label,
     required String value,
     required IconData icon,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     final isDark = theme.brightness == Brightness.dark;
     return InkWell(
@@ -601,9 +642,10 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded,
-                size: 16,
-                color: theme.colorScheme.onSurface.withAlpha(60)),
+            if (onTap != null)
+              Icon(Icons.chevron_right_rounded,
+                  size: 16,
+                  color: theme.colorScheme.onSurface.withAlpha(60)),
           ],
         ),
       ),

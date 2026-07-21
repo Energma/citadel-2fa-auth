@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -5,6 +7,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../ui/theme/palette.dart';
 import '../widgets/pin_input.dart';
+
+/// The one unlock method the screen is currently showing. Exactly one primary
+/// view renders at a time — the others are reachable through flat fallback
+/// links, never stacked on the same screen.
+enum _UnlockMethod { biometric, pin, password }
 
 class LockScreen extends ConsumerStatefulWidget {
   const LockScreen({super.key});
@@ -18,10 +25,15 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   bool _obscure = true;
   bool _loading = false;
   String? _error;
-  bool _showPinInput = false;
   String? _pinError;
+  bool _pinEnabled = false;
   bool _biometricUsable = false;
   bool _initialized = false;
+
+  /// What the user actually unlocks with day-to-day; fallback links always
+  /// offer a way back here so a mis-tap can't strand them on the password form.
+  _UnlockMethod _primaryMethod = _UnlockMethod.password;
+  _UnlockMethod _method = _UnlockMethod.password;
 
   @override
   void initState() {
@@ -46,8 +58,14 @@ class _LockScreenState extends ConsumerState<LockScreen> {
 
     if (!mounted) return;
     setState(() {
-      _showPinInput = pinEnabled;
+      _pinEnabled = pinEnabled;
       _biometricUsable = biometricUsable;
+      _primaryMethod = biometricUsable
+          ? _UnlockMethod.biometric
+          : pinEnabled
+              ? _UnlockMethod.pin
+              : _UnlockMethod.password;
+      _method = _primaryMethod;
       _initialized = true;
     });
 
@@ -61,7 +79,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   /// Prompt for the device credential. Safe to call again — cancelling just
-  /// leaves the user on the lock screen with the Verify button still there.
+  /// leaves the user on the lock screen with the fingerprint button still there.
   Future<void> _tryBiometric() async {
     final biometric = ref.read(biometricServiceProvider);
     final keystore = ref.read(keystoreServiceProvider);
@@ -70,10 +88,26 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     if (!success || !mounted) return;
 
     final key = await keystore.getVaultKey();
-    if (key == null) return;
+    if (key == null) {
+      // The scan succeeded but there is no stored key to unlock with — say so
+      // instead of silently doing nothing, and point at the fallback.
+      setState(() => _error = 'Biometric unlock is unavailable. '
+          'Use your ${_pinEnabled ? 'PIN' : 'master password'} instead.');
+      return;
+    }
 
-    // The stored key is the full passphrase (password+pin) encoded as UTF-8.
-    await _unlock(String.fromCharCodes(key));
+    // The stored key is the full passphrase (password+pin) encoded as UTF-8 —
+    // decode it the same way or non-ASCII passphrases fail to round-trip.
+    final unlocked = await _unlock(utf8.decode(key));
+    if (!unlocked && mounted) {
+      // The stored key no longer opens the vault (e.g. a restored backup keyed
+      // with a different passphrase). Retrying the sensor can't fix that, so
+      // replace the generic wrong-password message with a pointer to the
+      // fallback method.
+      setState(() => _error = 'Fingerprint accepted, but the stored key no '
+          'longer matches this vault. '
+          'Use your ${_pinEnabled ? 'PIN' : 'master password'} instead.');
+    }
   }
 
   Future<void> _handlePasswordSubmit() async {
@@ -84,6 +118,8 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   }
 
   Future<void> _handlePinCompleted(String pin) async {
+    if (_loading) return; // a previous attempt is still deriving the key
+
     final keystore = ref.read(keystoreServiceProvider);
 
     // Enforce the persisted lockout (survives app restarts, so it can't be
@@ -102,38 +138,46 @@ class _LockScreenState extends ConsumerState<LockScreen> {
       return;
     }
 
-    // The PIN is never stored. Whether it decrypts the vault IS the check —
-    // and the Argon2id key derivation makes each attempt deliberately slow.
-    final success =
-        await ref.read(vaultProvider.notifier).unlock('$masterPassword$pin');
-    if (!mounted) return;
-
-    if (success) {
-      await keystore.resetPinLockout(); // vault state flips to unlocked
-      return;
-    }
-
-    // Wrong PIN — increment the persisted counter and apply an escalating
-    // lockout once the threshold is crossed.
-    final attempts = await keystore.getPinAttempts() + 1;
-    await keystore.setPinAttempts(attempts);
-    final over = attempts - _maxAttemptsBeforeLockout;
-    if (over >= 0) {
-      // 30s, 60s, 120s, … capped at 30 minutes.
-      final secs = (30 * (1 << over.clamp(0, 16))).clamp(30, 1800);
-      final until = DateTime.now().add(Duration(seconds: secs));
-      await keystore.setPinLockoutUntil(until);
+    // Mark the attempt in-flight so the fallback links stay disabled — a view
+    // switch mid-attempt would land the wrong-PIN/lockout message on a view
+    // that never renders it.
+    setState(() => _loading = true);
+    try {
+      // The PIN is never stored. Whether it decrypts the vault IS the check —
+      // and the Argon2id key derivation makes each attempt deliberately slow.
+      final success =
+          await ref.read(vaultProvider.notifier).unlock('$masterPassword$pin');
       if (!mounted) return;
-      setState(() =>
-          _pinError = 'Too many wrong attempts. Locked for ${secs}s.');
-    } else {
-      if (!mounted) return;
-      setState(() => _pinError =
-          'Wrong PIN — ${_maxAttemptsBeforeLockout - attempts} attempt(s) left.');
+
+      if (success) {
+        await keystore.resetPinLockout(); // vault state flips to unlocked
+        return;
+      }
+
+      // Wrong PIN — increment the persisted counter and apply an escalating
+      // lockout once the threshold is crossed.
+      final attempts = await keystore.getPinAttempts() + 1;
+      await keystore.setPinAttempts(attempts);
+      final over = attempts - _maxAttemptsBeforeLockout;
+      if (over >= 0) {
+        // 30s, 60s, 120s, … capped at 30 minutes.
+        final secs = (30 * (1 << over.clamp(0, 16))).clamp(30, 1800);
+        final until = DateTime.now().add(Duration(seconds: secs));
+        await keystore.setPinLockoutUntil(until);
+        if (!mounted) return;
+        setState(() =>
+            _pinError = 'Too many wrong attempts. Locked for ${secs}s.');
+      } else {
+        if (!mounted) return;
+        setState(() => _pinError =
+            'Wrong PIN — ${_maxAttemptsBeforeLockout - attempts} attempt(s) left.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _unlock(String passphrase) async {
+  Future<bool> _unlock(String passphrase) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -157,6 +201,17 @@ class _LockScreenState extends ConsumerState<LockScreen> {
         setState(() => _error = 'Wrong password. Please try again.');
       }
     }
+    return success;
+  }
+
+  /// Switching views is purely local — no method is enabled or disabled, the
+  /// user just picks which credential to present.
+  void _switchTo(_UnlockMethod method) {
+    setState(() {
+      _method = method;
+      _error = null;
+      _pinError = null;
+    });
   }
 
   Widget _buildFooterLink(String text, String url, ThemeData theme) {
@@ -185,9 +240,11 @@ class _LockScreenState extends ConsumerState<LockScreen> {
               child: Center(
                 child: !_initialized
                     ? const CircularProgressIndicator()
-                    : _showPinInput
-                        ? _buildPinView(theme)
-                        : _buildPasswordView(theme),
+                    : switch (_method) {
+                        _UnlockMethod.biometric => _buildBiometricView(theme),
+                        _UnlockMethod.pin => _buildPinView(theme),
+                        _UnlockMethod.password => _buildPasswordView(theme),
+                      },
               ),
             ),
             // Footer with links and Powered by Energma
@@ -254,27 +311,133 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     );
   }
 
+  /// Logo + app name shared by the biometric and password views, so switching
+  /// between them doesn't visually reflow the top of the screen.
+  List<Widget> _buildHeader(ThemeData theme, String subtitle) {
+    return [
+      SvgPicture.asset('assets/logo/citadel_logo.svg', width: 72, height: 72),
+      const SizedBox(height: 16),
+      Text(
+        'Citadel Auth',
+        style: theme.textTheme.headlineMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        subtitle,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurface.withAlpha(153),
+        ),
+      ),
+    ];
+  }
+
+  /// A flat, low-emphasis link for hopping between unlock methods. These are
+  /// escape hatches, not calls to action — a heavy button would compete with
+  /// the primary unlock control above it.
+  Widget _buildSwitchLink(String label, _UnlockMethod target) {
+    return TextButton(
+      onPressed: _loading ? null : () => _switchTo(target),
+      child: Text(label),
+    );
+  }
+
+  Widget _buildBiometricView(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ..._buildHeader(theme, 'Unlock your vault'),
+          const SizedBox(height: 48),
+          // The automatic prompt on open can be cancelled or mis-scanned; the
+          // big fingerprint is the obvious way to try again without restarting.
+          IconButton(
+            onPressed: _loading ? null : _tryBiometric,
+            iconSize: 64,
+            padding: const EdgeInsets.all(20),
+            style: IconButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary.withAlpha(20),
+              foregroundColor: theme.colorScheme.primary,
+            ),
+            icon: const Icon(Icons.fingerprint),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Touch the sensor to unlock',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withAlpha(120),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          const SizedBox(height: 32),
+          // With a PIN enabled the vault passphrase is password+PIN, so the
+          // password view can't work (and would sidestep the persisted PIN
+          // lockout) — PIN is the only knowledge fallback in that case.
+          if (_pinEnabled)
+            _buildSwitchLink('Use PIN', _UnlockMethod.pin)
+          else
+            _buildSwitchLink('Use master password', _UnlockMethod.password),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPinView(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PinInput(
+          onCompleted: _handlePinCompleted,
+          error: _pinError,
+          title: 'Enter PIN',
+          subtitle: 'Enter your 6-digit PIN to unlock',
+        ),
+        const SizedBox(height: 12),
+        // No master-password fallback here: with a PIN enabled the vault
+        // passphrase is password+PIN, so the password alone can never unlock —
+        // and a free-form field would let wrong-PIN guesses (password+guess)
+        // bypass the persisted PIN lockout entirely.
+        if (_biometricUsable)
+          TextButton.icon(
+            onPressed: _loading ? null : _tryBiometric,
+            icon: const Icon(Icons.fingerprint, size: 20),
+            label: const Text('Use biometrics'),
+          ),
+        // Biometric attempts started from this view report through _error;
+        // _pinError (rendered inside PinInput) is for PIN attempts only.
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildPasswordView(ThemeData theme) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SvgPicture.asset('assets/logo/citadel_logo.svg', width: 72, height: 72),
-          const SizedBox(height: 16),
-          Text(
-            'Citadel Auth',
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Unlock your vault',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface.withAlpha(153),
-            ),
-          ),
+          ..._buildHeader(theme, 'Unlock your vault'),
           const SizedBox(height: 32),
           TextField(
             controller: _passwordController,
@@ -328,69 +491,19 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                   : const Text('Unlock'),
             ),
           ),
-          if (_biometricUsable) _buildBiometricAction(theme),
+          // A way back to the everyday method when the password form was only
+          // reached as a fallback.
+          if (_primaryMethod != _UnlockMethod.password) ...[
+            const SizedBox(height: 16),
+            _buildSwitchLink(
+              _primaryMethod == _UnlockMethod.biometric
+                  ? 'Use biometrics'
+                  : 'Use PIN',
+              _primaryMethod,
+            ),
+          ],
         ],
       ),
-    );
-  }
-
-  Widget _buildPinView(ThemeData theme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PinInput(
-          onCompleted: _handlePinCompleted,
-          error: _pinError,
-          title: 'Enter PIN',
-          subtitle: 'Enter your 6-digit PIN to unlock',
-        ),
-        if (_biometricUsable)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: _buildBiometricAction(theme),
-          ),
-      ],
-    );
-  }
-
-  /// Re-trigger the device prompt from the same screen. The automatic attempt on
-  /// open can be cancelled or mis-scanned; without this the only way back to
-  /// biometrics was to force-quit the app.
-  Widget _buildBiometricAction(ThemeData theme) {
-    return Column(
-      children: [
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(child: Divider(color: theme.dividerColor)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                'or',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withAlpha(120),
-                ),
-              ),
-            ),
-            Expanded(child: Divider(color: theme.dividerColor)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _loading ? null : _tryBiometric,
-            icon: const Icon(Icons.fingerprint, size: 22),
-            label: const Text('Verify to unlock Citadel Auth'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 /// Displays a service icon for a token issuer.
 /// Uses a built-in icon map for common services, falls back to favicon fetch,
@@ -22,6 +23,12 @@ class ServiceIcon extends StatelessWidget {
     final name = issuer.isNotEmpty ? issuer : account;
     final normalized = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
+    // Exact brand logos bundled as assets beat the generic Material glyphs,
+    // and being local they never leak which services the user has.
+    if (_bundledIcons.contains(normalized)) {
+      return _buildBundledIcon(theme, normalized);
+    }
+
     final iconData = _knownIcons[normalized];
     if (iconData != null) {
       return _buildKnownIcon(theme, iconData);
@@ -34,6 +41,39 @@ class ServiceIcon extends StatelessWidget {
     }
 
     return _buildLetterAvatar(theme, name);
+  }
+
+  Widget _buildBundledIcon(ThemeData theme, String name) {
+    final brand = _knownIcons[name]?.color ?? theme.colorScheme.primary;
+    // Near-black brand marks (GitHub, Apple) vanish on the dark theme —
+    // render those glyphs in the foreground color instead.
+    final glyph = theme.brightness == Brightness.dark &&
+            brand.computeLuminance() < 0.08
+        ? theme.colorScheme.onSurface
+        : brand;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            brand.withAlpha(50),
+            brand.withAlpha(20),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(size * 0.32),
+      ),
+      child: Center(
+        child: SvgPicture.asset(
+          'assets/icons/services/$name.svg',
+          width: size * 0.5,
+          height: size * 0.5,
+          colorFilter: ColorFilter.mode(glyph, BlendMode.srcIn),
+        ),
+      ),
+    );
   }
 
   Widget _buildKnownIcon(ThemeData theme, _ServiceIconData data) {
@@ -127,6 +167,21 @@ class ServiceIcon extends StatelessWidget {
     if (_knownIcons.containsKey(normalized)) return null;
     return '$normalized.com';
   }
+
+  // Brand logos shipped in assets/icons/services/ (simple-icons, CC0).
+  // Services missing here (e.g. Microsoft, Xbox) were pulled from that set
+  // for trademark reasons and keep their Material-icon fallback below.
+  static const Set<String> _bundledIcons = {
+    'amazon', 'apple', 'aws', 'battlenet', 'binance', 'bitbucket',
+    'bitwarden', 'blizzard', 'cloudflare', 'coinbase', 'digitalocean',
+    'discord', 'docker', 'dropbox', 'ea', 'epicgames', 'facebook', 'github',
+    'gitlab', 'gmail', 'godaddy', 'google', 'heroku', 'hetzner', 'instagram',
+    'lastpass', 'linkedin', 'meta', 'namecheap', 'netflix', 'netlify',
+    'nintendo', 'npm', 'ovh', 'paypal', 'playstation', 'proton',
+    'protonmail', 'reddit', 'riot', 'riotgames', 'signal', 'slack',
+    'snapchat', 'spotify', 'steam', 'stripe', 'telegram', 'tiktok',
+    'tutanota', 'twitch', 'twitter', 'ubisoft', 'vercel', 'whatsapp', 'x',
+  };
 
   static final Map<String, _ServiceIconData> _knownIcons = {
     'github': _ServiceIconData(Icons.code_rounded, Color(0xFF333333)),
