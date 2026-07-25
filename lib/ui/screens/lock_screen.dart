@@ -11,7 +11,13 @@ import '../widgets/pin_input.dart';
 /// The one unlock method the screen is currently showing. Exactly one primary
 /// view renders at a time — the others are reachable through flat fallback
 /// links, never stacked on the same screen.
-enum _UnlockMethod { biometric, pin, password }
+///
+/// [biometric] is true fingerprint/face unlock layered on an app PIN;
+/// [deviceCredential] is the phone's own screen lock (PIN/pattern/biometric
+/// via the OS) with no separate app PIN. Both drive the same native prompt
+/// via [BiometricService], but render different waiting views since only
+/// [biometric] is guaranteed to actually be a fingerprint/face scan.
+enum _UnlockMethod { biometric, deviceCredential, pin, password }
 
 class LockScreen extends ConsumerStatefulWidget {
   const LockScreen({super.key});
@@ -51,25 +57,27 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     final biometric = ref.read(biometricServiceProvider);
 
     final pinEnabled = await keystore.isPinEnabled();
-    final biometricEnabled = await keystore.isBiometricEnabled();
+    final unlockMethod = await keystore.getUnlockMethod();
     // Enabled in settings is not enough — the device must still be able to do
     // it (credential removed, biometrics unenrolled).
-    final biometricUsable = biometricEnabled && await biometric.isAvailable();
+    final credentialUsable = (unlockMethod == 'biometric' ||
+            unlockMethod == 'deviceCredential') &&
+        await biometric.isAvailable();
 
     if (!mounted) return;
     setState(() {
       _pinEnabled = pinEnabled;
-      _biometricUsable = biometricUsable;
-      _primaryMethod = biometricUsable
-          ? _UnlockMethod.biometric
-          : pinEnabled
-              ? _UnlockMethod.pin
-              : _UnlockMethod.password;
+      _biometricUsable = credentialUsable;
+      _primaryMethod = !credentialUsable
+          ? (pinEnabled ? _UnlockMethod.pin : _UnlockMethod.password)
+          : unlockMethod == 'deviceCredential'
+              ? _UnlockMethod.deviceCredential
+              : _UnlockMethod.biometric;
       _method = _primaryMethod;
       _initialized = true;
     });
 
-    if (biometricUsable) await _tryBiometric();
+    if (credentialUsable) await _tryBiometric();
   }
 
   @override
@@ -242,6 +250,8 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                     ? const CircularProgressIndicator()
                     : switch (_method) {
                         _UnlockMethod.biometric => _buildBiometricView(theme),
+                        _UnlockMethod.deviceCredential =>
+                          _buildDeviceCredentialView(theme),
                         _UnlockMethod.pin => _buildPinView(theme),
                         _UnlockMethod.password => _buildPasswordView(theme),
                       },
@@ -393,6 +403,55 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     );
   }
 
+  /// Same native prompt as [_buildBiometricView], but for the "phone's screen
+  /// lock" method the prompt may end up being a PIN/pattern entry rather than
+  /// a sensor scan — so no fingerprint icon is shown here, unlike the true
+  /// biometric view, to avoid flashing a misleading graphic before the actual
+  /// OS prompt appears.
+  Widget _buildDeviceCredentialView(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ..._buildHeader(theme, 'Unlock your vault'),
+          const SizedBox(height: 48),
+          IconButton(
+            onPressed: _loading ? null : _tryBiometric,
+            iconSize: 64,
+            padding: const EdgeInsets.all(20),
+            style: IconButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary.withAlpha(20),
+              foregroundColor: theme.colorScheme.primary,
+            ),
+            icon: const Icon(Icons.lock_open_rounded),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Confirm using your device screen lock',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withAlpha(120),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          const SizedBox(height: 32),
+          // No app PIN exists for this method — the master password is the
+          // only other way in.
+          _buildSwitchLink('Use master password', _UnlockMethod.password),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPinView(ThemeData theme) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -496,9 +555,12 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           if (_primaryMethod != _UnlockMethod.password) ...[
             const SizedBox(height: 16),
             _buildSwitchLink(
-              _primaryMethod == _UnlockMethod.biometric
-                  ? 'Use biometrics'
-                  : 'Use PIN',
+              switch (_primaryMethod) {
+                _UnlockMethod.biometric => 'Use biometrics',
+                _UnlockMethod.deviceCredential => 'Use device screen lock',
+                _UnlockMethod.pin => 'Use PIN',
+                _UnlockMethod.password => 'Use master password',
+              },
               _primaryMethod,
             ),
           ],

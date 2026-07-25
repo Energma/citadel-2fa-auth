@@ -85,13 +85,16 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       await keystore.setPinEnabled(true);
 
       // Optional biometric convenience on top of the PIN.
+      var usesBiometric = false;
       if (_enableBiometric) {
         final biometric = ref.read(biometricServiceProvider);
         if (await biometric.isAvailable()) {
           await keystore.storeVaultKey(utf8.encode(passphrase));
           await keystore.setBiometricEnabled(true);
+          usesBiometric = true;
         }
       }
+      await keystore.setUnlockMethod(usesBiometric ? 'biometric' : 'pin');
     }
 
     if (mounted) {
@@ -127,7 +130,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       // No PIN hash — pinEnabled stays false. The stored vault key lets the
       // lock screen unlock after the device-credential prompt succeeds.
       await keystore.storeVaultKey(utf8.encode(password));
+      // Kept for back-compat with any code still reading this flag directly;
+      // setUnlockMethod below is what the lock screen actually branches on.
       await keystore.setBiometricEnabled(true);
+      await keystore.setUnlockMethod('deviceCredential');
     }
 
     if (mounted) {

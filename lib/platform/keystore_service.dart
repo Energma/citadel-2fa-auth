@@ -21,6 +21,7 @@ class KeystoreService {
   static const _pinAttemptsKey = 'citadel_pin_attempts';
   static const _pinLockoutUntilKey = 'citadel_pin_lockout_until';
   static const _masterPasswordKey = 'citadel_master_password';
+  static const _unlockMethodKey = 'citadel_unlock_method';
 
   /// Store the derived vault key in secure storage.
   Future<void> storeVaultKey(Uint8List key) async {
@@ -60,6 +61,32 @@ class KeystoreService {
   /// Enable or disable biometric unlock.
   Future<void> setBiometricEnabled(bool enabled) async {
     await _storage.write(key: _biometricEnabledKey, value: enabled.toString());
+  }
+
+  /// The distinct unlock method the vault was set up with: 'pin',
+  /// 'deviceCredential', 'biometric', or 'password'. 'biometric' means true
+  /// fingerprint/face unlock layered on top of an app PIN; 'deviceCredential'
+  /// means the phone's own screen lock (PIN/pattern/biometric via the OS) is
+  /// the only unlock method, with no separate app PIN.
+  ///
+  /// Installs from before this field existed only recorded a single
+  /// `biometricEnabled` flag for both of the above cases — this infers the
+  /// right method from that older data so existing unlock setups keep
+  /// working unchanged.
+  Future<String> getUnlockMethod() async {
+    final stored = await _storage.read(key: _unlockMethodKey);
+    if (stored != null) return stored;
+
+    final pinEnabled = await isPinEnabled();
+    final biometricEnabled = await isBiometricEnabled();
+    if (pinEnabled && biometricEnabled) return 'biometric';
+    if (pinEnabled) return 'pin';
+    if (biometricEnabled) return 'deviceCredential';
+    return 'password';
+  }
+
+  Future<void> setUnlockMethod(String method) async {
+    await _storage.write(key: _unlockMethodKey, value: method);
   }
 
   /// Check if PIN is enabled.

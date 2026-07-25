@@ -695,23 +695,53 @@ class _BiometricTileState extends ConsumerState<_BiometricTile> {
 
   @override
   Widget build(BuildContext context) {
-    final biometricAsync = ref.watch(biometricEnabledProvider);
+    final pinAsync = ref.watch(pinEnabledProvider);
 
-    return ListTile(
-      leading: const Icon(Icons.fingerprint),
-      title: const Text('Biometric Unlock'),
-      subtitle: const Text('Use fingerprint or face to unlock'),
-      trailing: biometricAsync.when(
-        data: (enabled) => Switch(
-          value: enabled,
-          onChanged: _toggling ? null : (v) => _toggle(v),
-        ),
-        loading: () => const SizedBox(
+    return pinAsync.when(
+      data: (pinEnabled) {
+        // Without an app PIN, unlock is either the phone's own screen lock
+        // (chosen at account creation) or the master password — there's no
+        // separate biometric shortcut to toggle. Showing an interactive
+        // switch here would either do nothing meaningful or, for device-lock
+        // accounts, look like it could be turned off while it's actually
+        // their only configured unlock method.
+        if (!pinEnabled) {
+          return const ListTile(
+            enabled: false,
+            leading: Icon(Icons.fingerprint),
+            title: Text('Biometric Unlock'),
+            subtitle:
+                Text('Set up an app PIN to enable a separate biometric shortcut'),
+          );
+        }
+
+        final biometricAsync = ref.watch(biometricEnabledProvider);
+        return ListTile(
+          leading: const Icon(Icons.fingerprint),
+          title: const Text('Biometric Unlock'),
+          subtitle: const Text('Use fingerprint or face to unlock'),
+          trailing: biometricAsync.when(
+            data: (enabled) => Switch(
+              value: enabled,
+              onChanged: _toggling ? null : (v) => _toggle(v),
+            ),
+            loading: () => const SizedBox(
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            error: (_, _) => const Switch(value: false, onChanged: null),
+          ),
+        );
+      },
+      loading: () => const ListTile(
+        leading: Icon(Icons.fingerprint),
+        title: Text('Biometric Unlock'),
+        trailing: SizedBox(
           width: 20, height: 20,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
-        error: (_, _) => const Switch(value: false, onChanged: null),
       ),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
@@ -733,6 +763,9 @@ class _BiometricTileState extends ConsumerState<_BiometricTile> {
         }
       }
       await keystore.setBiometricEnabled(value);
+      // This tile only renders when an app PIN is enabled, so the method is
+      // always 'pin' or 'biometric' here — never 'deviceCredential'.
+      await keystore.setUnlockMethod(value ? 'biometric' : 'pin');
       ref.invalidate(biometricEnabledProvider);
     } finally {
       if (mounted) setState(() => _toggling = false);
@@ -827,6 +860,10 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
       // The PIN is part of the passphrase; just record that PIN unlock is on.
       await keystore.setPinEnabled(true);
+      // Setting up a PIN makes it the primary unlock method, overriding
+      // whatever this user had before (e.g. a leftover device-lock setup) —
+      // they can still layer real biometric back on via the Settings toggle.
+      await keystore.setUnlockMethod('pin');
 
       // Update stored vault key for biometric
       final bioEnabled = await keystore.isBiometricEnabled();
@@ -924,12 +961,17 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
       await keystore.clearPin();
 
+      // The 'biometric' method is a PIN add-on — without a PIN it's not a
+      // supported state, so fall back to the master password and drop the
+      // now-orphaned biometric flag rather than leaving a stale toggle.
       final bioEnabled = await keystore.isBiometricEnabled();
       if (bioEnabled) {
-        await keystore.storeVaultKey(utf8.encode(password));
+        await keystore.setBiometricEnabled(false);
       }
+      await keystore.setUnlockMethod('password');
 
       ref.invalidate(pinEnabledProvider);
+      ref.invalidate(biometricEnabledProvider);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
