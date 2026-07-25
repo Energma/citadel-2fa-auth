@@ -71,9 +71,15 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     // Auto-submit only when there's no explicit submit button (fast unlock).
     // Clear the entered PIN as we submit so the dots reset for the next try
     // even when the error message is identical to the previous attempt's.
+    // The reset is deferred a frame so the last dot's filled state actually
+    // paints before it's cleared — clearing in the same setState call as the
+    // digit that completes the PIN gets coalesced into one rebuild, so that
+    // frame is never shown.
     if (_pin.length == widget.length && widget.submitLabel == null) {
       final value = _pin;
-      setState(() => _pin = '');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _pin = '');
+      });
       widget.onCompleted(value);
     }
   }
@@ -82,7 +88,9 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     if (_pin.length != widget.length) return;
     HapticFeedback.lightImpact();
     final value = _pin;
-    setState(() => _pin = '');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _pin = '');
+    });
     widget.onCompleted(value);
   }
 
