@@ -369,7 +369,29 @@ class _GroupTab extends ConsumerWidget {
                 child: DropdownButtonFormField<String>(
                   value: currentProfileId,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Profile'),
+                  decoration: InputDecoration(
+                    labelText: 'Profile',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(80),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(60),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.auto,
+                  ),
                   items: profileList
                       .map((p) => DropdownMenuItem(
                             value: p.id,

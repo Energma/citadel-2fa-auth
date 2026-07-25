@@ -386,7 +386,29 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
             data: (profileList) => DropdownButtonFormField<String?>(
               value: _profileId,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Profile'),
+              decoration: InputDecoration(
+                labelText: 'Profile',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(80),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(60),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
+                floatingLabelBehavior: FloatingLabelBehavior.auto,
+              ),
               items: [
                 const DropdownMenuItem(value: null, child: Text('None')),
                 ...profileList.map((p) => DropdownMenuItem(
@@ -418,7 +440,29 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                 : DropdownButtonFormField<String?>(
                     value: _groupId,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Group'),
+                    decoration: InputDecoration(
+                      labelText: 'Group',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline.withAlpha(80),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline.withAlpha(60),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                      floatingLabelBehavior: FloatingLabelBehavior.auto,
+                    ),
                     items: [
                       const DropdownMenuItem(
                           value: null, child: Text('None')),
