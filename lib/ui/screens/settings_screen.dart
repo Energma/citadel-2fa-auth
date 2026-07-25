@@ -795,17 +795,11 @@ class _PinTileState extends ConsumerState<_PinTile> {
   }
 
   Future<void> _setupPin(BuildContext context) async {
-    final pin = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (_) => const PinSetupScreen()),
-    );
-    if (pin == null || !mounted) return;
-
     final keystore = ref.read(keystoreServiceProvider);
     final db = ref.read(vaultDatabaseProvider);
 
-    // Re-key database: current passphrase + new PIN
-    // We need the current passphrase — prompt user
+    // Verify the current passphrase before asking the user to go through PIN
+    // entry, so a wrong password is reported immediately instead of after.
     final password = await _promptPassword(context, 'Enter your master password to enable PIN');
     if (password == null || !mounted) return;
 
@@ -817,6 +811,12 @@ class _PinTileState extends ConsumerState<_PinTile> {
       }
       return;
     }
+
+    final pin = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const PinSetupScreen()),
+    );
+    if (pin == null || !mounted) return;
 
     try {
       final newPassphrase = '$password$pin';
@@ -851,17 +851,11 @@ class _PinTileState extends ConsumerState<_PinTile> {
   }
 
   Future<void> _changePin(BuildContext context) async {
-    final newPin = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (_) => const PinSetupScreen(title: 'Change PIN')),
-    );
-    if (newPin == null || !mounted) return;
+    final keystore = ref.read(keystoreServiceProvider);
+    final db = ref.read(vaultDatabaseProvider);
 
     final password = await _promptPassword(context, 'Enter your master password');
     if (password == null || !mounted) return;
-
-    final keystore = ref.read(keystoreServiceProvider);
-    final db = ref.read(vaultDatabaseProvider);
 
     if (!await keystore.verifyMasterPassword(password)) {
       if (mounted) {
@@ -871,6 +865,12 @@ class _PinTileState extends ConsumerState<_PinTile> {
       }
       return;
     }
+
+    final newPin = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const PinSetupScreen(title: 'Change PIN')),
+    );
+    if (newPin == null || !mounted) return;
 
     try {
       final newPassphrase = '$password$newPin';
