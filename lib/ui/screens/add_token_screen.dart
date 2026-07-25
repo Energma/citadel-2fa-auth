@@ -601,6 +601,32 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                               ),
                     ),
                   ),
+                  // Changing Type/Algorithm here only changes what this app
+                  // expects — it can't reconfigure the issuing service, so a
+                  // mismatch here means generated codes will never validate.
+                  if (_type != OtpType.totp || _algorithm != Algorithm.sha1) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 16,
+                            color: theme.colorScheme.onSurface.withAlpha(140)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Type and Algorithm must exactly match what your '
+                            'provider issued — most services use TOTP + SHA1. '
+                            "Changing these here won't reconfigure the provider.",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withAlpha(140),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
