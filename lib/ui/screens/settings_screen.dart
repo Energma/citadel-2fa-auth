@@ -12,6 +12,7 @@ import '../../ui/theme/app_theme.dart';
 import '../../ui/theme/palette.dart';
 import '../widgets/master_password_dialog.dart';
 import 'pin_setup_screen.dart';
+import 'vault_deleted_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -657,25 +658,40 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirmed == true && context.mounted) {
-      // Wiping the vault is the most destructive action — require the master
-      // password before erasing everything.
-      showDialog(
-        context: context,
-        builder: (pwdCtx) => MasterPasswordDialog(
-          title: 'Confirm Vault Deletion',
-          subtitle:
-              'Enter your master password to permanently delete all data.',
-          onConfirm: () async {
-            final db = ref.read(vaultDatabaseProvider);
-            await db.deleteVault();
-            final keystore = ref.read(keystoreServiceProvider);
-            await keystore.clearAll();
-            ref.read(vaultProvider.notifier).checkStatus();
-            if (context.mounted) {
-              Navigator.popUntil(context, (route) => route.isFirst);
-            }
-          },
+    if (confirmed != true || !context.mounted) return;
+
+    // Set inside onConfirm only once deletion actually succeeds, so a
+    // cancelled or failed confirmation never triggers the screen below.
+    var deleted = false;
+
+    // Wiping the vault is the most destructive action — require the master
+    // password before erasing everything.
+    await showDialog(
+      context: context,
+      builder: (pwdCtx) => MasterPasswordDialog(
+        title: 'Confirm Vault Deletion',
+        subtitle: 'Enter your master password to permanently delete all data.',
+        onConfirm: () async {
+          final db = ref.read(vaultDatabaseProvider);
+          await db.deleteVault();
+          final keystore = ref.read(keystoreServiceProvider);
+          await keystore.clearAll();
+          deleted = true;
+        },
+      ),
+    );
+
+    if (deleted && context.mounted) {
+      // The vault state only flips to uninitialized once this screen's
+      // message+logo sequence finishes — see VaultDeletedScreen.onComplete.
+      // Without it, popping straight back here would reveal a stale
+      // HomeScreen pointed at the just-deleted database for a frame.
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => VaultDeletedScreen(
+            onComplete: () => ref.read(vaultProvider.notifier).checkStatus(),
+          ),
         ),
       );
     }
