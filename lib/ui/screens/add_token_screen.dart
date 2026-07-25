@@ -260,7 +260,11 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
     final isDark = theme.brightness == Brightness.dark;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      // Bottom padding leaves room for the system nav bar so the CTA button
+      // at the end of the form isn't hidden behind it once Advanced options
+      // push the content past the viewport height.
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
