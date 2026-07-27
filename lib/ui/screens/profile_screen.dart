@@ -361,52 +361,55 @@ class _GroupTab extends ConsumerWidget {
           );
         }
 
+        final currentProfile =
+            profileList.firstWhereOrNull((p) => p.id == currentProfileId);
+
         return Column(
           children: [
             if (profileList.length > 1)
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: DropdownButtonFormField<String>(
-                  value: currentProfileId,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: 'Profile',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withAlpha(80),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _showProfilePicker(
+                      context, profileList, currentProfileId, onProfileSelected),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Profile',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline.withAlpha(80),
+                        ),
                       ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withAlpha(60),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline.withAlpha(60),
+                        ),
                       ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 2,
+                        ),
                       ),
+                      floatingLabelBehavior: FloatingLabelBehavior.auto,
                     ),
-                    floatingLabelBehavior: FloatingLabelBehavior.auto,
+                    child: Row(
+                      children: [
+                        if (currentProfile != null) ...[
+                          CircleAvatar(
+                              backgroundColor: currentProfile.color, radius: 6),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(child: Text(currentProfile?.name ?? '')),
+                        Icon(Icons.arrow_drop_down_rounded,
+                            color: theme.colorScheme.onSurface.withAlpha(140)),
+                      ],
+                    ),
                   ),
-                  items: profileList
-                      .map((p) => DropdownMenuItem(
-                            value: p.id,
-                            child: Row(
-                              children: [
-                                CircleAvatar(backgroundColor: p.color, radius: 6),
-                                const SizedBox(width: 8),
-                                Text(p.name),
-                              ],
-                            ),
-                          ))
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) onProfileSelected?.call(v);
-                  },
                 ),
               ),
             Expanded(
@@ -418,6 +421,60 @@ class _GroupTab extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+
+  void _showProfilePicker(BuildContext context, List<Profile> profileList,
+      String? current, ValueChanged<String>? onSelected) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withAlpha(40),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text('Profile',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 8),
+                ...profileList.map((p) => ListTile(
+                      leading:
+                          CircleAvatar(backgroundColor: p.color, radius: 6),
+                      title: Text(p.name),
+                      trailing: p.id == current
+                          ? Icon(Icons.check_rounded,
+                              color: theme.colorScheme.primary)
+                          : null,
+                      onTap: () {
+                        onSelected?.call(p.id);
+                        Navigator.pop(ctx);
+                      },
+                    )),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

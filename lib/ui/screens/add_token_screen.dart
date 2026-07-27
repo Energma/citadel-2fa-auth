@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/crypto/otp_engine.dart';
@@ -383,50 +384,68 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
 
           // Profile selector
           profiles.when(
-            data: (profileList) => DropdownButtonFormField<String?>(
-              value: _profileId,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: 'Profile',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withAlpha(80),
-                  ),
+            data: (profileList) {
+              final selected =
+                  profileList.where((p) => p.id == _profileId).firstOrNull;
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _showOptionPicker<String?>(
+                  title: 'Profile',
+                  options: [null, ...profileList.map((p) => p.id)],
+                  current: _profileId,
+                  labelOf: (id) => id == null
+                      ? 'None'
+                      : profileList.firstWhere((p) => p.id == id).name,
+                  leadingOf: (id) => id == null
+                      ? null
+                      : CircleAvatar(
+                          backgroundColor:
+                              profileList.firstWhere((p) => p.id == id).color,
+                          radius: 6),
+                  onSelected: (v) => setState(() => _profileId = v),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withAlpha(60),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-                floatingLabelBehavior: FloatingLabelBehavior.auto,
-              ),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('None')),
-                ...profileList.map((p) => DropdownMenuItem(
-                      value: p.id,
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                              backgroundColor: p.color, radius: 6),
-                          const SizedBox(width: 8),
-                          Expanded(
-                              child: Text(p.name,
-                                  overflow: TextOverflow.ellipsis)),
-                        ],
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Profile',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(80),
                       ),
-                    )),
-              ],
-              onChanged: (v) => setState(() => _profileId = v),
-            ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(60),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.auto,
+                  ),
+                  child: Row(
+                    children: [
+                      if (selected != null) ...[
+                        CircleAvatar(
+                            backgroundColor: selected.color, radius: 6),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(selected?.name ?? 'None',
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      Icon(Icons.arrow_drop_down_rounded,
+                          color: theme.colorScheme.onSurface.withAlpha(140)),
+                    ],
+                  ),
+                ),
+              );
+            },
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),
@@ -435,55 +454,67 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
 
           // Group selector
           groups.when(
-            data: (groupList) => groupList.isEmpty
-                ? const SizedBox.shrink()
-                : DropdownButtonFormField<String?>(
-                    value: _groupId,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: 'Group',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: theme.colorScheme.outline.withAlpha(80),
-                        ),
+            data: (groupList) {
+              if (groupList.isEmpty) return const SizedBox.shrink();
+              final selected =
+                  groupList.where((g) => g.id == _groupId).firstOrNull;
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _showOptionPicker<String?>(
+                  title: 'Group',
+                  options: [null, ...groupList.map((g) => g.id)],
+                  current: _groupId,
+                  labelOf: (id) => id == null
+                      ? 'None'
+                      : groupList.firstWhere((g) => g.id == id).name,
+                  leadingOf: (id) => id == null
+                      ? null
+                      : Icon(Icons.folder_rounded,
+                          color: theme.colorScheme.primary),
+                  onSelected: (v) => setState(() => _groupId = v),
+                ),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Group',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(80),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: theme.colorScheme.outline.withAlpha(60),
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(
-                          color: theme.colorScheme.primary,
-                          width: 2,
-                        ),
-                      ),
-                      floatingLabelBehavior: FloatingLabelBehavior.auto,
                     ),
-                    items: [
-                      const DropdownMenuItem(
-                          value: null, child: Text('None')),
-                      ...groupList.map((g) => DropdownMenuItem(
-                            value: g.id,
-                            child: Row(
-                              children: [
-                                Icon(Icons.folder_rounded,
-                                    size: 16,
-                                    color: theme.colorScheme.primary),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                    child: Text(g.name,
-                                        overflow:
-                                            TextOverflow.ellipsis)),
-                              ],
-                            ),
-                          )),
-                    ],
-                    onChanged: (v) => setState(() => _groupId = v),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(60),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.auto,
                   ),
+                  child: Row(
+                    children: [
+                      if (selected != null) ...[
+                        Icon(Icons.folder_rounded,
+                            size: 16, color: theme.colorScheme.primary),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(selected?.name ?? 'None',
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      Icon(Icons.arrow_drop_down_rounded,
+                          color: theme.colorScheme.onSurface.withAlpha(140)),
+                    ],
+                  ),
+                ),
+              );
+            },
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),
@@ -732,6 +763,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
     required T current,
     required String Function(T) labelOf,
     required void Function(T) onSelected,
+    Widget? Function(T)? leadingOf,
   }) {
     showModalBottomSheet(
       context: context,
@@ -765,6 +797,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                 ),
                 const SizedBox(height: 8),
                 ...options.map((opt) => ListTile(
+                      leading: leadingOf?.call(opt),
                       title: Text(labelOf(opt)),
                       trailing: opt == current
                           ? Icon(Icons.check_rounded,
