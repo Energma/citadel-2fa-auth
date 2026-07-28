@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
@@ -144,6 +143,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               error: (e, _) => Center(child: Text('Error: $e')),
             ),
           ),
+          bottomNavigationBar:
+              _isSearching ? null : _buildTabBar(theme, isDark),
         );
       },
       loading: () => const Scaffold(
@@ -165,8 +166,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SvgPicture.asset(
-                  'assets/logo/citadel_logo.svg',
+                Image.asset(
+                  'assets/logo/citadel-logo.png',
                   width: 32,
                   height: 32,
                 ),
@@ -227,7 +228,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         const SizedBox(width: 4),
       ],
-      bottom: _isSearching ? null : _buildTabBar(theme, isDark),
     );
   }
 
@@ -248,18 +248,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  PreferredSizeWidget _buildTabBar(ThemeData theme, bool isDark) {
-    if (_tabController == null) {
-      return const PreferredSize(
-        preferredSize: Size.fromHeight(0),
-        child: SizedBox.shrink(),
-      );
-    }
+  Widget _buildTabBar(ThemeData theme, bool isDark) {
+    if (_tabController == null) return const SizedBox.shrink();
 
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(52),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+    // Bottom bar sits above the OS gesture/nav area — SafeArea keeps the
+    // tabs and manage button clear of it instead of letting them get
+    // covered by the native navigation buttons.
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border(
+            top: BorderSide(
+              color: isDark
+                  ? Colors.white.withAlpha(15)
+                  : Colors.black.withAlpha(15),
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.only(top: 4),
         child: Row(
           children: [
             Expanded(
@@ -332,7 +340,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       padding: const EdgeInsets.only(right: 12),
       child: IconButton(
         icon: Icon(
-          Icons.tune_rounded,
+          Icons.add_rounded,
           size: 20,
           color: theme.colorScheme.onSurface.withAlpha(120),
         ),
@@ -684,8 +692,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 scale: value,
                 child: child,
               ),
-              child: SvgPicture.asset(
-                'assets/logo/citadel_logo.svg',
+              child: Image.asset(
+                'assets/logo/citadel-logo.png',
                 width: 96,
                 height: 96,
               ),
