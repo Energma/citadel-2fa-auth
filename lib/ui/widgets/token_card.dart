@@ -186,9 +186,18 @@ class _TokenCardState extends State<TokenCard>
                     _buildHeader(theme),
                     const SizedBox(height: 16),
                     _buildCodeSection(theme, isExpiring),
-                    if (isExpiring) ...[
+                    if (widget.token.type == OtpType.totp) ...[
                       const SizedBox(height: 8),
-                      _buildNextCode(theme),
+                      // Space for the next-code row is always reserved (not just
+                      // when expiring) so the card height never changes as the
+                      // timer crosses the 5s threshold.
+                      Visibility(
+                        visible: isExpiring,
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: _buildNextCode(theme),
+                      ),
                     ],
                   ],
                 ),
