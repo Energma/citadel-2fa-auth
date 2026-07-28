@@ -278,6 +278,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                 indicatorSize: TabBarIndicatorSize.label,
+                // TabBar's default indicator rect sits a couple pixels lower
+                // than center (more gap above the label than below) — nudge
+                // it up so the selected pill's padding is symmetrical.
+                indicatorPadding: const EdgeInsets.only(top: -2, bottom: 2),
                 indicator: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: theme.colorScheme.primary.withAlpha(isDark ? 40 : 25),
