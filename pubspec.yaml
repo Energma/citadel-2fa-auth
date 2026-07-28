@@ -66,19 +66,14 @@ flutter:
     - assets/logo/
 
 # Regenerate with `dart run flutter_launcher_icons` after changing the source
-# images (both rasterized from citadel_logo.svg):
-#   - citadel_icon_source.png: transparent background — used as the Android
-#     adaptive-icon foreground layer (paired with adaptive_icon_background
-#     below) so the mark fills the launcher's mask shape edge-to-edge instead
-#     of floating inside an auto-generated padded circle.
-#   - citadel_icon_opaque.png: same mark on the brand navy background — used
-#     for iOS and legacy (pre-Android-8) icons, neither of which has an
-#     adaptive background layer to composite a transparent PNG onto, and iOS
-#     additionally rejects any icon with an alpha channel outright.
+# image (assets/logo/citadel-logo.png). remove_alpha_ios flattens the
+# transparent background for iOS/legacy icons, which reject alpha channels;
+# adaptive_icon_background gives the Android adaptive-icon mask a matching
+# backdrop behind the (transparent) foreground layer.
 flutter_launcher_icons:
-  image_path: assets/logo/citadel_icon_opaque.png
+  image_path: assets/logo/citadel-logo.png
   android: true
   ios: true
   remove_alpha_ios: true
   adaptive_icon_background: "#0B1120"
-  adaptive_icon_foreground: assets/logo/citadel_icon_source.png
+  adaptive_icon_foreground: assets/logo/citadel-logo.png

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
@@ -85,8 +84,8 @@ class SettingsScreen extends ConsumerWidget {
 
           _sectionHeader(theme, 'About'),
           ListTile(
-            leading: SvgPicture.asset(
-              'assets/logo/citadel_logo.svg',
+            leading: Image.asset(
+              'assets/logo/citadel-logo.png',
               width: 24,
               height: 24,
             ),

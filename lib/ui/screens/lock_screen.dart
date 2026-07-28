@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import '../../ui/theme/palette.dart';
@@ -325,7 +324,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   /// between them doesn't visually reflow the top of the screen.
   List<Widget> _buildHeader(ThemeData theme, String subtitle) {
     return [
-      SvgPicture.asset('assets/logo/citadel_logo.svg', width: 72, height: 72),
+      Image.asset('assets/logo/citadel-logo.png', width: 72, height: 72),
       const SizedBox(height: 16),
       Text(
         'Citadel Auth',
