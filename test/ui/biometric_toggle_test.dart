@@ -50,9 +50,15 @@ class _FakeKeystoreService extends KeystoreService {
 
 class _FakeBiometricService extends BiometricService {
   bool available = false;
+  // Defaults to [available] unless a test wants to model a device that has
+  // *a* screen lock (isAvailable) but no real fingerprint/face sensor.
+  bool? hasHardware;
 
   @override
   Future<bool> isAvailable() async => available;
+
+  @override
+  Future<bool> hasBiometricHardware() async => hasHardware ?? available;
 }
 
 /// Overrides verifyPassphrase so no real SQLCipher file is ever touched.
@@ -178,6 +184,31 @@ void main() {
     expect(keystore.biometricEnabled, true);
     expect(keystore.unlockMethod, 'deviceCredential');
     expect(keystore.vaultKey, utf8.encode('master-pw'));
+  });
+
+  testWidgets(
+      'a PIN account cannot enable biometric unlock on a device that only '
+      'has a plain screen lock, no real biometric sensor', (tester) async {
+    // The bug: the toggle used to accept isAvailable() (true for *any*
+    // secure lock screen, including a bare PIN/pattern) as proof biometrics
+    // work, letting a PIN account end up with unlockMethod == 'biometric' on
+    // hardware that can never actually satisfy it.
+    final keystore = _FakeKeystoreService()
+      ..pinEnabled = true
+      ..masterPassword = 'master-pw';
+    final biometric = _FakeBiometricService()
+      ..available = true
+      ..hasHardware = false;
+    final db = _FakeVaultDatabase();
+
+    await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+
+    await tester.tap(find.byType(Switch));
+    await _settle(tester);
+
+    expect(find.text('Biometrics not available on this device'), findsOneWidget);
+    expect(keystore.biometricEnabled, false);
+    expect(keystore.unlockMethod, isNull);
   });
 
   testWidgets(

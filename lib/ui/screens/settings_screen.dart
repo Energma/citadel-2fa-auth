@@ -766,7 +766,15 @@ class _BiometricTileState extends ConsumerState<_BiometricTile> {
       }
 
       final bio = ref.read(biometricServiceProvider);
-      if (!await bio.isAvailable()) {
+      // With a PIN, this toggle means a real fingerprint/face scan on top of
+      // it — requires actual sensor hardware, not just any screen lock, or
+      // the lock screen would flash a fingerprint prompt that can never
+      // succeed. Without a PIN it's the device's own screen lock as a whole,
+      // so any secure lock screen (PIN/pattern/password/biometric) counts.
+      final hardwareOk = pinEnabled
+          ? await bio.hasBiometricHardware()
+          : await bio.isAvailable();
+      if (!hardwareOk) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Biometrics not available on this device')),

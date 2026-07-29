@@ -83,11 +83,14 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       // is enabled — the PIN itself is never stored.
       await keystore.setPinEnabled(true);
 
-      // Optional biometric convenience on top of the PIN.
+      // Optional biometric convenience on top of the PIN. Requires real
+      // fingerprint/face hardware — isAvailable() alone would also pass for
+      // a device with nothing but a PIN/pattern screen lock, which isn't
+      // "biometric" and would flash a fingerprint prompt that can never work.
       var usesBiometric = false;
       if (_enableBiometric) {
         final biometric = ref.read(biometricServiceProvider);
-        if (await biometric.isAvailable()) {
+        if (await biometric.hasBiometricHardware()) {
           await keystore.storeVaultKey(utf8.encode(passphrase));
           await keystore.setBiometricEnabled(true);
           usesBiometric = true;
