@@ -675,6 +675,20 @@ class SettingsScreen extends ConsumerWidget {
           await db.deleteVault();
           final keystore = ref.read(keystoreServiceProvider);
           await keystore.clearAll();
+          // keystore.clearAll() wipes every persisted setting, but the
+          // Riverpod providers caching them in memory don't know that on
+          // their own — without invalidating them here, a vault created
+          // right after deletion would keep showing the previous vault's
+          // PIN/biometric/theme/accent/auto-lock state until the app is
+          // killed and restarted. Invalidating a StateProvider re-runs its
+          // initial `(ref) => ...` callback, which resets it to the same
+          // default it would have on a fresh install.
+          ref.invalidate(pinEnabledProvider);
+          ref.invalidate(biometricEnabledProvider);
+          ref.invalidate(autoLockDurationProvider);
+          ref.invalidate(themeModeProvider);
+          ref.invalidate(accentColorProvider);
+          ref.invalidate(allViewGeneralSortOrderProvider);
           deleted = true;
         },
       ),
@@ -710,77 +724,103 @@ class _BiometricTileState extends ConsumerState<_BiometricTile> {
 
   @override
   Widget build(BuildContext context) {
-    final pinAsync = ref.watch(pinEnabledProvider);
+    final biometricAsync = ref.watch(biometricEnabledProvider);
 
-    return pinAsync.when(
-      data: (pinEnabled) {
-        // Without an app PIN, unlock is either the phone's own screen lock
-        // (chosen at account creation) or the master password — there's no
-        // separate biometric shortcut to toggle. Showing an interactive
-        // switch here would either do nothing meaningful or, for device-lock
-        // accounts, look like it could be turned off while it's actually
-        // their only configured unlock method.
-        if (!pinEnabled) {
-          return const ListTile(
-            enabled: false,
-            leading: Icon(Icons.fingerprint),
-            title: Text('Biometric Unlock'),
-            subtitle:
-                Text('Set up an app PIN to enable a separate biometric shortcut'),
-          );
-        }
-
-        final biometricAsync = ref.watch(biometricEnabledProvider);
-        return ListTile(
-          leading: const Icon(Icons.fingerprint),
-          title: const Text('Biometric Unlock'),
-          subtitle: const Text('Use fingerprint or face to unlock'),
-          trailing: biometricAsync.when(
-            data: (enabled) => Switch(
-              value: enabled,
-              onChanged: _toggling ? null : (v) => _toggle(v),
-            ),
-            loading: () => const SizedBox(
+    return ListTile(
+      leading: const Icon(Icons.fingerprint),
+      title: const Text('Biometric Unlock'),
+      subtitle: const Text('Use fingerprint or face to unlock'),
+      trailing: _toggling
+          ? const SizedBox(
               width: 20, height: 20,
               child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : biometricAsync.when(
+              data: (enabled) => Switch(
+                value: enabled,
+                onChanged: (v) => _toggle(v),
+              ),
+              loading: () => const SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              error: (_, _) => const Switch(value: false, onChanged: null),
             ),
-            error: (_, _) => const Switch(value: false, onChanged: null),
-          ),
-        );
-      },
-      loading: () => const ListTile(
-        leading: Icon(Icons.fingerprint),
-        title: Text('Biometric Unlock'),
-        trailing: SizedBox(
-          width: 20, height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-      error: (_, _) => const SizedBox.shrink(),
     );
   }
 
   Future<void> _toggle(bool value) async {
     setState(() => _toggling = true);
+    final keystore = ref.read(keystoreServiceProvider);
+
     try {
-      final keystore = ref.read(keystoreServiceProvider);
-      if (value) {
-        final bio = ref.read(biometricServiceProvider);
-        final available = await bio.isAvailable();
-        if (!available) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Biometrics not available on this device')),
-            );
-          }
-          setState(() => _toggling = false);
-          return;
-        }
+      final pinEnabled = await ref.read(pinEnabledProvider.future);
+
+      if (!value) {
+        await keystore.setBiometricEnabled(false);
+        // Biometric is layered on top of whatever the primary method is —
+        // an app PIN if one exists, otherwise the master password.
+        await keystore.setUnlockMethod(pinEnabled ? 'pin' : 'password');
+        ref.invalidate(biometricEnabledProvider);
+        return;
       }
-      await keystore.setBiometricEnabled(value);
-      // This tile only renders when an app PIN is enabled, so the method is
-      // always 'pin' or 'biometric' here — never 'deviceCredential'.
-      await keystore.setUnlockMethod(value ? 'biometric' : 'pin');
+
+      final bio = ref.read(biometricServiceProvider);
+      if (!await bio.isAvailable()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Biometrics not available on this device')),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+
+      // Turning biometric unlock on has to (re)store the exact passphrase
+      // the vault is encrypted with, so the lock screen can hand it back
+      // after a successful scan. Re-verifying the master password here
+      // isn't just identity confirmation — it's the passphrase material
+      // itself for accounts with no PIN.
+      final password = await _promptPassword(
+          context, 'Enter your master password to set up biometric unlock');
+      if (password == null || !mounted) return;
+
+      if (!await keystore.verifyMasterPassword(password)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Incorrect master password')),
+          );
+        }
+        return;
+      }
+
+      String passphrase;
+      if (pinEnabled) {
+        // The PIN is mixed into the passphrase but never stored on its own
+        // (see KeystoreService.setPinEnabled) — it has to be re-entered here
+        // to rebuild the exact passphrase the vault is encrypted with.
+        final db = ref.read(vaultDatabaseProvider);
+        final pin = await Navigator.push<String>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PinConfirmScreen(
+              subtitle: 'Enter your app PIN to set up biometric unlock.',
+              verify: (candidate) =>
+                  db.verifyPassphrase('$password$candidate'),
+            ),
+          ),
+        );
+        if (pin == null || !mounted) return;
+        passphrase = '$password$pin';
+      } else {
+        passphrase = password;
+      }
+
+      await keystore.storeMasterPassword(password);
+      await keystore.storeVaultKey(utf8.encode(passphrase));
+      await keystore.setBiometricEnabled(true);
+      await keystore
+          .setUnlockMethod(pinEnabled ? 'biometric' : 'deviceCredential');
       ref.invalidate(biometricEnabledProvider);
     } finally {
       if (mounted) setState(() => _toggling = false);
@@ -1001,59 +1041,63 @@ class _PinTileState extends ConsumerState<_PinTile> {
       }
     }
   }
+}
 
-  Future<String?> _promptPassword(BuildContext context, String title) async {
-    final controller = TextEditingController();
-    final theme = Theme.of(context);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: 'Master Password',
-            hintText: 'Enter your password',
-            prefixIcon: const Icon(Icons.lock_outline),
-            filled: true,
-            fillColor: theme.colorScheme.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withAlpha(100),
-              ),
+/// Shared master-password re-entry prompt. Used everywhere a PIN or
+/// biometric flow needs to re-verify identity before touching the vault's
+/// encryption passphrase — `SettingsScreen`'s PIN flows and `_BiometricTile`
+/// alike, so it lives at the top level rather than on either class.
+Future<String?> _promptPassword(BuildContext context, String title) async {
+  final controller = TextEditingController();
+  final theme = Theme.of(context);
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        obscureText: true,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: 'Master Password',
+          hintText: 'Enter your password',
+          prefixIcon: const Icon(Icons.lock_outline),
+          filled: true,
+          fillColor: theme.colorScheme.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: theme.colorScheme.outline.withAlpha(100),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withAlpha(80),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.primary,
-                width: 2,
-              ),
-            ),
-            floatingLabelBehavior: FloatingLabelBehavior.auto,
           ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: theme.colorScheme.outline.withAlpha(80),
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: theme.colorScheme.primary,
+              width: 2,
+            ),
+          ),
+          floatingLabelBehavior: FloatingLabelBehavior.auto,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Confirm'),
-          ),
-        ],
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, null),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(ctx, controller.text),
+          child: const Text('Confirm'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Accent picker for the Personal Theme setting. Changes apply live — the whole

@@ -557,7 +557,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             data: theme.copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               key: PageStorageKey('group_${group?.id ?? 'general'}'),
-              initiallyExpanded: false,
+              initiallyExpanded: isGeneral,
               tilePadding: const EdgeInsets.symmetric(horizontal: 16),
               childrenPadding: const EdgeInsets.only(bottom: 8),
               shape: const RoundedRectangleBorder(),

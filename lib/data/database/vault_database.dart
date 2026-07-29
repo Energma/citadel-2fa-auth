@@ -43,6 +43,28 @@ class VaultDatabase {
     return databaseExists(path);
   }
 
+  /// Checks whether [passphrase] decrypts the vault, without disturbing the
+  /// already-open connection (used to re-confirm a PIN when its digits
+  /// aren't stored anywhere, e.g. before turning on biometric unlock later).
+  /// `singleInstance: false` is required here — otherwise the plugin would
+  /// just hand back the already-open connection for this path and skip
+  /// checking the candidate passphrase entirely.
+  Future<bool> verifyPassphrase(String passphrase) async {
+    final path = await _dbPath;
+    try {
+      final probe = await openDatabase(
+        path,
+        password: passphrase,
+        readOnly: true,
+        singleInstance: false,
+      );
+      await probe.close();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Delete the vault (destructive).
   Future<void> deleteVault() async {
     await close();
