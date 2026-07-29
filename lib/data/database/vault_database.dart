@@ -6,7 +6,7 @@ import '../../core/models/profile.dart';
 
 class VaultDatabase {
   static const String _dbName = 'citadel_vault.db';
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
 
   Database? _database;
 
@@ -63,6 +63,7 @@ class VaultDatabase {
         colorValue INTEGER NOT NULL,
         iconName TEXT,
         sortOrder INTEGER NOT NULL DEFAULT 0,
+        generalSortOrder INTEGER NOT NULL DEFAULT -1,
         createdAt TEXT NOT NULL
       )
     ''');
@@ -155,6 +156,12 @@ class VaultDatabase {
       }
       await db.execute('DROP TABLE groups');
       await db.execute('ALTER TABLE groups_new RENAME TO groups');
+    }
+
+    if (oldVersion < 4) {
+      // Add General section's per-profile position for Home-screen reorder.
+      await db.execute(
+          'ALTER TABLE profiles ADD COLUMN generalSortOrder INTEGER NOT NULL DEFAULT -1');
     }
   }
 
@@ -298,6 +305,13 @@ class VaultDatabase {
           where: 'id = ?', whereArgs: [entry.key]);
     }
     await batch.commit(noResult: true);
+  }
+
+  /// Update where the synthetic "General" section sits among [profileId]'s
+  /// groups on the Home screen.
+  Future<void> updateGeneralSortOrder(String profileId, int order) async {
+    await _db.update('profiles', {'generalSortOrder': order},
+        where: 'id = ?', whereArgs: [profileId]);
   }
 
   /// Update a token's profile assignment.

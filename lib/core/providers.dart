@@ -166,6 +166,12 @@ final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
 /// the house palette. Defaults to the brand color until the user picks one.
 final accentColorProvider = StateProvider<Color>((ref) => Palette.primary);
 
+/// Position of the synthetic "General" section on the Home screen's "All"
+/// tab, where it pools ungrouped tokens across every profile and so can't be
+/// stored on a single profile row like [Profile.generalSortOrder]. Device-
+/// level UI preference, not vault content.
+final allViewGeneralSortOrderProvider = StateProvider<int>((ref) => -1);
+
 /// Load persisted settings from keystore on app start.
 Future<void> loadPersistedSettings(ProviderContainer container) async {
   final keystore = container.read(keystoreServiceProvider);
@@ -184,4 +190,8 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
   if (accent != null) {
     container.read(accentColorProvider.notifier).state = Color(accent);
   }
+
+  final allViewGeneralOrder = await keystore.getAllViewGeneralSortOrder();
+  container.read(allViewGeneralSortOrderProvider.notifier).state =
+      allViewGeneralOrder;
 }

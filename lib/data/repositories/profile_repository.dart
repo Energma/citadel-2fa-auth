@@ -17,6 +17,9 @@ class ProfileRepository {
   Future<void> updateSortOrders(Map<String, int> idToOrder) =>
       _db.updateProfileSortOrders(idToOrder);
 
+  Future<void> updateGeneralSortOrder(String profileId, int order) =>
+      _db.updateGeneralSortOrder(profileId, order);
+
   // --- Group operations ---
 
   Future<List<TokenGroup>> getAllGroups() => _db.getAllGroups();

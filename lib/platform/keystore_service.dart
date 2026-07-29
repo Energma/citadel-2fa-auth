@@ -16,6 +16,7 @@ class KeystoreService {
   static const _autoLockMinutesKey = 'citadel_auto_lock_minutes';
   static const _themeModeKey = 'citadel_theme_mode';
   static const _accentColorKey = 'citadel_accent_color';
+  static const _allViewGeneralSortOrderKey = 'citadel_all_view_general_sort_order';
   static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
   static const _pinAttemptsKey = 'citadel_pin_attempts';
@@ -183,6 +184,20 @@ class KeystoreService {
   /// Drop the custom accent and fall back to the house color.
   Future<void> clearAccentColor() async {
     await _storage.delete(key: _accentColorKey);
+  }
+
+  /// Store General's Home-screen position for the "All" tab, where it pools
+  /// ungrouped tokens across every profile and so isn't scoped to one
+  /// profile row.
+  Future<void> storeAllViewGeneralSortOrder(int order) async {
+    await _storage.write(
+        key: _allViewGeneralSortOrderKey, value: order.toString());
+  }
+
+  /// Get the stored All-tab General position (default -1 = sorts first).
+  Future<int> getAllViewGeneralSortOrder() async {
+    final value = await _storage.read(key: _allViewGeneralSortOrderKey);
+    return int.tryParse(value ?? '') ?? -1;
   }
 
   /// Store the master password for PIN-only login.
