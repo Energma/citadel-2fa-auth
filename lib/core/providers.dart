@@ -146,8 +146,17 @@ final appVersionProvider = FutureProvider<String>((ref) async {
 
 // --- Biometric ---
 
+// Derived from the unlock method rather than the legacy standalone flag, so
+// this reflects true biometric unlock only — never the device-credential
+// case, which has its own provider below.
 final biometricEnabledProvider = FutureProvider<bool>((ref) async {
-  return ref.read(keystoreServiceProvider).isBiometricEnabled();
+  final method = await ref.read(keystoreServiceProvider).getUnlockMethod();
+  return method == 'biometric';
+});
+
+final deviceCredentialEnabledProvider = FutureProvider<bool>((ref) async {
+  final method = await ref.read(keystoreServiceProvider).getUnlockMethod();
+  return method == 'deviceCredential';
 });
 
 // --- PIN ---

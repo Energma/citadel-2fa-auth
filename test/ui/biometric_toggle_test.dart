@@ -11,8 +11,8 @@ import 'package:citadel_auth/platform/keystore_service.dart';
 import 'package:citadel_auth/ui/screens/settings_screen.dart';
 
 /// In-memory keystore fake covering every read/write the Biometric Unlock
-/// toggle touches, so the real FlutterSecureStorage platform channel is
-/// never hit in tests.
+/// and Device Unlock toggles touch, so the real FlutterSecureStorage
+/// platform channel is never hit in tests.
 class _FakeKeystoreService extends KeystoreService {
   bool pinEnabled = false;
   bool biometricEnabled = false;
@@ -46,6 +46,9 @@ class _FakeKeystoreService extends KeystoreService {
 
   @override
   Future<void> storeVaultKey(Uint8List key) async => vaultKey = key;
+
+  @override
+  Future<void> clearVaultKey() async => vaultKey = null;
 }
 
 class _FakeBiometricService extends BiometricService {
@@ -83,7 +86,7 @@ Future<void> _pumpSettings(
   ]);
   addTearDown(container.dispose);
 
-  // Phone-sized surface so the Security section and its switch aren't
+  // Phone-sized surface so the Security section and its switches aren't
   // clipped by the default 800x600 test window.
   tester.view.physicalSize = const Size(1170, 2532);
   tester.view.devicePixelRatio = 3.0;
@@ -99,7 +102,7 @@ Future<void> _pumpSettings(
   await tester.pumpAndSettle();
 }
 
-/// Bounded alternative to pumpAndSettle(). While the toggle's async chain is
+/// Bounded alternative to pumpAndSettle(). While a toggle's async chain is
 /// in flight, the tile shows an indeterminate CircularProgressIndicator,
 /// which schedules frames forever and makes plain pumpAndSettle() time out.
 Future<void> _settle(WidgetTester tester) async {
@@ -117,119 +120,224 @@ Future<void> _enterPinAndConfirm(WidgetTester tester, String pin) async {
   await _settle(tester);
 }
 
+/// The Switch inside the ListTile titled [title] — Settings shows two
+/// independent switches side by side (Biometric Unlock, Device Unlock), so
+/// find.byType(Switch) alone is ambiguous.
+Finder _switchFor(String title) => find.descendant(
+      of: find.ancestor(
+          of: find.text(title), matching: find.byType(ListTile)),
+      matching: find.byType(Switch),
+    );
+
 void main() {
-  testWidgets(
-      'enabling biometric unlock for a PIN account re-derives and stores '
-      'the vault key instead of just flipping a flag', (tester) async {
-    final keystore = _FakeKeystoreService()
-      ..pinEnabled = true
-      ..masterPassword = 'master-pw';
-    final biometric = _FakeBiometricService()..available = true;
-    final db = _FakeVaultDatabase()..correctPassphrase = 'master-pw112233';
+  group('Biometric Unlock', () {
+    testWidgets(
+        'enabling it for a PIN account re-derives and stores the vault key '
+        'instead of just flipping a flag', (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = true
+        ..masterPassword = 'master-pw';
+      final biometric = _FakeBiometricService()..available = true;
+      final db = _FakeVaultDatabase()..correctPassphrase = 'master-pw112233';
 
-    await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
 
-    // Biometric starts off — the switch is interactive even though this
-    // account already has a PIN and never enabled it at setup.
-    expect(tester.widget<Switch>(find.byType(Switch)).value, false);
+      final toggle = _switchFor('Biometric Unlock');
+      // Biometric starts off — the switch is interactive even though this
+      // account already has a PIN and never enabled it at setup.
+      expect(tester.widget<Switch>(toggle).value, false);
 
-    await tester.tap(find.byType(Switch));
-    await _settle(tester);
+      await tester.tap(toggle);
+      await _settle(tester);
 
-    // Master password re-entry dialog.
-    await tester.enterText(find.byType(TextField), 'master-pw');
-    await tester.tap(find.text('Confirm'));
-    await _settle(tester);
+      // Master password re-entry dialog.
+      await tester.enterText(find.byType(TextField), 'master-pw');
+      await tester.tap(find.text('Confirm'));
+      await _settle(tester);
 
-    // PIN re-entry screen — the PIN is never stored, so it has to be
-    // re-confirmed to rebuild the exact passphrase the vault uses.
-    expect(find.text('Confirm PIN'), findsWidgets);
-    await _enterPinAndConfirm(tester, '112233');
+      // PIN re-entry screen — the PIN is never stored, so it has to be
+      // re-confirmed to rebuild the exact passphrase the vault uses.
+      expect(find.text('Confirm PIN'), findsWidgets);
+      await _enterPinAndConfirm(tester, '112233');
 
-    expect(keystore.biometricEnabled, true);
-    expect(keystore.unlockMethod, 'biometric');
-    // The bug: previously nothing stored a vault key here at all, so the
-    // lock screen's biometric flow would fail with "unavailable" the first
-    // time the user actually tried to use it.
-    expect(keystore.vaultKey, utf8.encode('master-pw112233'));
+      expect(keystore.biometricEnabled, true);
+      expect(keystore.unlockMethod, 'biometric');
+      expect(keystore.vaultKey, utf8.encode('master-pw112233'));
+    });
+
+    testWidgets(
+        'stays hardware-gated for an account with no PIN too — any secure '
+        'screen lock is not enough on its own; that is what Device Unlock '
+        'is for', (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = false
+        ..masterPassword = 'master-pw';
+      final biometric = _FakeBiometricService()
+        ..available = true
+        ..hasHardware = false;
+      final db = _FakeVaultDatabase();
+
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+
+      await tester.tap(_switchFor('Biometric Unlock'));
+      await _settle(tester);
+
+      expect(find.text('Biometrics not available on this device'), findsOneWidget);
+      expect(keystore.biometricEnabled, false);
+      expect(keystore.unlockMethod, isNull);
+    });
+
+    testWidgets(
+        'a PIN account cannot enable it on a device that only has a plain '
+        'screen lock, no real biometric sensor', (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = true
+        ..masterPassword = 'master-pw';
+      final biometric = _FakeBiometricService()
+        ..available = true
+        ..hasHardware = false;
+      final db = _FakeVaultDatabase();
+
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+
+      await tester.tap(_switchFor('Biometric Unlock'));
+      await _settle(tester);
+
+      expect(find.text('Biometrics not available on this device'), findsOneWidget);
+      expect(keystore.biometricEnabled, false);
+      expect(keystore.unlockMethod, isNull);
+    });
+
+    testWidgets(
+        'disabling it for an account with no PIN falls back to password, '
+        'not the nonexistent PIN', (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = false
+        ..biometricEnabled = true
+        ..unlockMethod = 'biometric'
+        ..vaultKey = utf8.encode('master-pw');
+      final biometric = _FakeBiometricService()..available = true;
+      final db = _FakeVaultDatabase();
+
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+
+      final toggle = _switchFor('Biometric Unlock');
+      expect(tester.widget<Switch>(toggle).value, true);
+      await tester.tap(toggle);
+      await _settle(tester);
+
+      expect(keystore.biometricEnabled, false);
+      expect(keystore.unlockMethod, 'password');
+      // The stored vault key goes too, so the lock screen stops offering a
+      // "Use device screen lock" fallback for a method just turned off.
+      expect(keystore.vaultKey, isNull);
+    });
   });
 
-  testWidgets(
-      'enabling biometric unlock for an account with no PIN works instead '
-      'of being permanently blocked', (tester) async {
-    final keystore = _FakeKeystoreService()
-      ..pinEnabled = false
-      ..masterPassword = 'master-pw';
-    final biometric = _FakeBiometricService()..available = true;
-    final db = _FakeVaultDatabase();
+  group('Device Unlock', () {
+    testWidgets(
+        'a PIN account without real biometric hardware can still enable it '
+        'via the phone\'s plain screen lock — the bug this tile fixes',
+        (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = true
+        ..masterPassword = 'master-pw';
+      final biometric = _FakeBiometricService()
+        ..available = true
+        ..hasHardware = false;
+      final db = _FakeVaultDatabase()..correctPassphrase = 'master-pw112233';
 
-    await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
 
-    // The bug: this tile used to hard-disable itself and show "Set up an
-    // app PIN..." whenever there was no PIN, with no way to ever turn
-    // biometric on for such an account.
-    expect(find.textContaining('Set up an app PIN'), findsNothing);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, false);
+      final toggle = _switchFor('Device Unlock');
+      expect(tester.widget<Switch>(toggle).value, false);
 
-    await tester.tap(find.byType(Switch));
-    await _settle(tester);
+      await tester.tap(toggle);
+      await _settle(tester);
 
-    await tester.enterText(find.byType(TextField), 'master-pw');
-    await tester.tap(find.text('Confirm'));
-    await _settle(tester);
+      await tester.enterText(find.byType(TextField), 'master-pw');
+      await tester.tap(find.text('Confirm'));
+      await _settle(tester);
 
-    // No PIN on this account, so there's no PIN re-entry step — the master
-    // password alone is the vault's encryption passphrase.
-    expect(find.text('Confirm PIN'), findsNothing);
-    expect(keystore.biometricEnabled, true);
-    expect(keystore.unlockMethod, 'deviceCredential');
-    expect(keystore.vaultKey, utf8.encode('master-pw'));
-  });
+      expect(find.text('Confirm PIN'), findsWidgets);
+      await _enterPinAndConfirm(tester, '112233');
 
-  testWidgets(
-      'a PIN account cannot enable biometric unlock on a device that only '
-      'has a plain screen lock, no real biometric sensor', (tester) async {
-    // The bug: the toggle used to accept isAvailable() (true for *any*
-    // secure lock screen, including a bare PIN/pattern) as proof biometrics
-    // work, letting a PIN account end up with unlockMethod == 'biometric' on
-    // hardware that can never actually satisfy it.
-    final keystore = _FakeKeystoreService()
-      ..pinEnabled = true
-      ..masterPassword = 'master-pw';
-    final biometric = _FakeBiometricService()
-      ..available = true
-      ..hasHardware = false;
-    final db = _FakeVaultDatabase();
+      expect(keystore.unlockMethod, 'deviceCredential');
+      expect(keystore.vaultKey, utf8.encode('master-pw112233'));
+      // Distinct from Biometric Unlock — this flow never touches that flag.
+      expect(keystore.biometricEnabled, false);
+    });
 
-    await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+    testWidgets(
+        'works for an account with no PIN using any screen lock, not just '
+        'biometric hardware', (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = false
+        ..masterPassword = 'master-pw';
+      final biometric = _FakeBiometricService()
+        ..available = true
+        ..hasHardware = false;
+      final db = _FakeVaultDatabase();
 
-    await tester.tap(find.byType(Switch));
-    await _settle(tester);
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
 
-    expect(find.text('Biometrics not available on this device'), findsOneWidget);
-    expect(keystore.biometricEnabled, false);
-    expect(keystore.unlockMethod, isNull);
-  });
+      final toggle = _switchFor('Device Unlock');
+      expect(tester.widget<Switch>(toggle).value, false);
 
-  testWidgets(
-      'disabling biometric unlock for an account with no PIN falls back to '
-      'password, not the nonexistent PIN', (tester) async {
-    final keystore = _FakeKeystoreService()
-      ..pinEnabled = false
-      ..biometricEnabled = true
-      ..unlockMethod = 'deviceCredential';
-    final biometric = _FakeBiometricService()..available = true;
-    final db = _FakeVaultDatabase();
+      await tester.tap(toggle);
+      await _settle(tester);
 
-    await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+      // No PIN on this account, so there's no PIN re-entry step — the
+      // master password alone is the vault's encryption passphrase.
+      await tester.enterText(find.byType(TextField), 'master-pw');
+      await tester.tap(find.text('Confirm'));
+      await _settle(tester);
 
-    expect(tester.widget<Switch>(find.byType(Switch)).value, true);
-    await tester.tap(find.byType(Switch));
-    await _settle(tester);
+      expect(find.text('Confirm PIN'), findsNothing);
+      expect(keystore.unlockMethod, 'deviceCredential');
+      expect(keystore.vaultKey, utf8.encode('master-pw'));
+    });
 
-    expect(keystore.biometricEnabled, false);
-    // The bug: this used to be hardcoded to 'pin' regardless of whether a
-    // PIN actually existed on the account.
-    expect(keystore.unlockMethod, 'password');
+    testWidgets('is blocked when the phone has no screen lock at all',
+        (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = true
+        ..masterPassword = 'master-pw';
+      final biometric = _FakeBiometricService()..available = false;
+      final db = _FakeVaultDatabase();
+
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+
+      await tester.tap(_switchFor('Device Unlock'));
+      await _settle(tester);
+
+      expect(find.text('No screen lock found on this phone'), findsOneWidget);
+      expect(keystore.unlockMethod, isNull);
+    });
+
+    testWidgets(
+        'disabling it for an account with no PIN falls back to password, '
+        'not the nonexistent PIN', (tester) async {
+      final keystore = _FakeKeystoreService()
+        ..pinEnabled = false
+        ..unlockMethod = 'deviceCredential'
+        ..vaultKey = utf8.encode('master-pw');
+      final biometric = _FakeBiometricService()..available = true;
+      final db = _FakeVaultDatabase();
+
+      await _pumpSettings(tester, keystore: keystore, biometric: biometric, db: db);
+
+      final toggle = _switchFor('Device Unlock');
+      expect(tester.widget<Switch>(toggle).value, true);
+      await tester.tap(toggle);
+      await _settle(tester);
+
+      // This used to be hardcoded to 'pin' regardless of whether a PIN
+      // actually existed on the account — now derived from pinEnabled.
+      expect(keystore.unlockMethod, 'password');
+      // The stored vault key goes too, so the lock screen stops offering a
+      // "Use device screen lock" fallback for a method just turned off.
+      expect(keystore.vaultKey, isNull);
+    });
   });
 }

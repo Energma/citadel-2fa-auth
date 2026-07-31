@@ -36,11 +36,12 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   bool _initialized = false;
 
   /// A stored vault key means the device's screen lock (Pattern/PIN/
-  /// biometric) was set up to unlock this vault at some point — independent
-  /// of whatever [_primaryMethod] resolves to right now. Disabling the
-  /// Settings "Biometric Unlock" toggle on a no-PIN account doesn't clear
-  /// this key, so the option to use it stays offered here even though it's
-  /// no longer the primary/auto-prompted method.
+  /// biometric) is set up to unlock this vault right now — independent of
+  /// whatever [_primaryMethod] resolves to. Both the "Biometric Unlock" and
+  /// "Device Unlock" Settings toggles clear this key when turned off, so
+  /// this only stays true while one of them is actually enabled; it exists
+  /// separately from [_primaryMethod] because a stored key can outlive a
+  /// PIN change/removal that demotes it from primary without disabling it.
   bool _hasStoredVaultKey = false;
 
   /// What the user actually unlocks with day-to-day; fallback links always
@@ -483,9 +484,14 @@ class _LockScreenState extends ConsumerState<LockScreen> {
             ),
           ],
           const SizedBox(height: 32),
-          // No app PIN exists for this method — the master password is the
-          // only other way in.
-          _buildSwitchLink('Use master password', _UnlockMethod.password),
+          // Device-credential unlock can be layered on an app PIN (see
+          // Settings' "Device Unlock" toggle) — in that case the vault
+          // passphrase includes the PIN, so a raw master password can't
+          // decrypt it and PIN must be the fallback instead.
+          if (_pinEnabled)
+            _buildSwitchLink('Use PIN', _UnlockMethod.pin)
+          else
+            _buildSwitchLink('Use master password', _UnlockMethod.password),
         ],
       ),
     );

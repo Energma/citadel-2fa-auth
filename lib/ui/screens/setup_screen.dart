@@ -102,6 +102,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       // whatever PIN/biometric state the previous vault had.
       ref.invalidate(pinEnabledProvider);
       ref.invalidate(biometricEnabledProvider);
+      ref.invalidate(deviceCredentialEnabledProvider);
     }
 
     if (mounted) {
@@ -137,15 +138,16 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       // No PIN hash — pinEnabled stays false. The stored vault key lets the
       // lock screen unlock after the device-credential prompt succeeds.
       await keystore.storeVaultKey(utf8.encode(password));
-      // Kept for back-compat with any code still reading this flag directly;
-      // setUnlockMethod below is what the lock screen actually branches on.
-      await keystore.setBiometricEnabled(true);
+      // Device-credential unlock, not biometric — setUnlockMethod below is
+      // what the lock screen and Settings actually branch on. Do NOT also
+      // set the biometric flag here: the two are separate unlock methods.
       await keystore.setUnlockMethod('deviceCredential');
       // See the matching comment in _createWithAppPin — without this, a
       // stale cached PIN/biometric flag from a previously deleted vault
       // would leak into this new vault's Settings screen.
       ref.invalidate(pinEnabledProvider);
       ref.invalidate(biometricEnabledProvider);
+      ref.invalidate(deviceCredentialEnabledProvider);
     }
 
     if (mounted) {

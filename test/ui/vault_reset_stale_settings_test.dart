@@ -103,6 +103,7 @@ void main() {
     final keystore = _FakeKeystoreService()
       ..pinEnabled = true
       ..biometricEnabled = true
+      ..unlockMethod = 'biometric'
       ..masterPassword = 'old-master-pw';
     final db = _FakeVaultDatabase();
 

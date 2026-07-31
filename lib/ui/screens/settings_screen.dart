@@ -52,6 +52,7 @@ class SettingsScreen extends ConsumerWidget {
 
           _sectionHeader(theme, 'Security'),
           _BiometricTile(ref: ref),
+          _DeviceCredentialTile(ref: ref),
           _PinTile(ref: ref),
           ListTile(
             leading: const Icon(Icons.timer),
@@ -761,20 +762,22 @@ class _BiometricTileState extends ConsumerState<_BiometricTile> {
         // Biometric is layered on top of whatever the primary method is —
         // an app PIN if one exists, otherwise the master password.
         await keystore.setUnlockMethod(pinEnabled ? 'pin' : 'password');
+        // Drop the stored vault key too — otherwise the lock screen keeps
+        // offering a "Use device screen lock" fallback for a method the
+        // user just explicitly turned off.
+        await keystore.clearVaultKey();
         ref.invalidate(biometricEnabledProvider);
         return;
       }
 
       final bio = ref.read(biometricServiceProvider);
-      // With a PIN, this toggle means a real fingerprint/face scan on top of
-      // it — requires actual sensor hardware, not just any screen lock, or
-      // the lock screen would flash a fingerprint prompt that can never
-      // succeed. Without a PIN it's the device's own screen lock as a whole,
-      // so any secure lock screen (PIN/pattern/password/biometric) counts.
-      final hardwareOk = pinEnabled
-          ? await bio.hasBiometricHardware()
-          : await bio.isAvailable();
-      if (!hardwareOk) {
+      // This toggle means a real fingerprint/face scan — requires actual
+      // sensor hardware with something enrolled, regardless of whether a PIN
+      // is set. A device with only a PIN/pattern screen lock and no sensor
+      // is covered by the separate "Device Unlock" toggle instead, so the
+      // lock screen never flashes a fingerprint prompt that can never
+      // succeed.
+      if (!await bio.hasBiometricHardware()) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Biometrics not available on this device')),
@@ -827,8 +830,130 @@ class _BiometricTileState extends ConsumerState<_BiometricTile> {
       await keystore.storeMasterPassword(password);
       await keystore.storeVaultKey(utf8.encode(passphrase));
       await keystore.setBiometricEnabled(true);
-      await keystore
-          .setUnlockMethod(pinEnabled ? 'biometric' : 'deviceCredential');
+      await keystore.setUnlockMethod('biometric');
+      ref.invalidate(biometricEnabledProvider);
+      ref.invalidate(deviceCredentialEnabledProvider);
+    } finally {
+      if (mounted) setState(() => _toggling = false);
+    }
+  }
+}
+
+class _DeviceCredentialTile extends ConsumerStatefulWidget {
+  final WidgetRef ref;
+  const _DeviceCredentialTile({required this.ref});
+
+  @override
+  ConsumerState<_DeviceCredentialTile> createState() =>
+      _DeviceCredentialTileState();
+}
+
+class _DeviceCredentialTileState extends ConsumerState<_DeviceCredentialTile> {
+  bool _toggling = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final deviceCredentialAsync = ref.watch(deviceCredentialEnabledProvider);
+
+    return ListTile(
+      leading: const Icon(Icons.phonelink_lock_outlined),
+      title: const Text('Device Unlock'),
+      subtitle: const Text(
+          "Unlock with your phone's PIN, pattern, password, or biometrics"),
+      trailing: _toggling
+          ? const SizedBox(
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : deviceCredentialAsync.when(
+              data: (enabled) => Switch(
+                value: enabled,
+                onChanged: (v) => _toggle(v),
+              ),
+              loading: () => const SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              error: (_, _) => const Switch(value: false, onChanged: null),
+            ),
+    );
+  }
+
+  Future<void> _toggle(bool value) async {
+    setState(() => _toggling = true);
+    final keystore = ref.read(keystoreServiceProvider);
+
+    try {
+      final pinEnabled = await ref.read(pinEnabledProvider.future);
+
+      if (!value) {
+        // Device-credential unlock is layered on top of whatever the
+        // primary method is — an app PIN if one exists, otherwise the
+        // master password. Distinct from (and independent of) the
+        // Biometric Unlock toggle above.
+        await keystore.setUnlockMethod(pinEnabled ? 'pin' : 'password');
+        // Drop the stored vault key too — otherwise the lock screen keeps
+        // offering a "Use device screen lock" fallback even though the
+        // user just explicitly turned this off; from here on in, only the
+        // master password (or PIN) should get them in.
+        await keystore.clearVaultKey();
+        ref.invalidate(deviceCredentialEnabledProvider);
+        return;
+      }
+
+      final bio = ref.read(biometricServiceProvider);
+      // Unlike Biometric Unlock, this only needs *some* secure screen lock —
+      // PIN, pattern, password, or biometric — not real sensor hardware.
+      if (!await bio.isAvailable()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('No screen lock found on this phone')),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+
+      // Turning device unlock on has to (re)store the exact passphrase the
+      // vault is encrypted with, so the lock screen can hand it back after a
+      // successful device-credential prompt.
+      final password = await _promptPassword(
+          context, 'Enter your master password to set up device unlock');
+      if (password == null || !mounted) return;
+
+      if (!await keystore.verifyMasterPassword(password)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Incorrect master password')),
+          );
+        }
+        return;
+      }
+
+      String passphrase;
+      if (pinEnabled) {
+        final db = ref.read(vaultDatabaseProvider);
+        final pin = await Navigator.push<String>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PinConfirmScreen(
+              subtitle: 'Enter your app PIN to set up device unlock.',
+              verify: (candidate) =>
+                  db.verifyPassphrase('$password$candidate'),
+            ),
+          ),
+        );
+        if (pin == null || !mounted) return;
+        passphrase = '$password$pin';
+      } else {
+        passphrase = password;
+      }
+
+      await keystore.storeMasterPassword(password);
+      await keystore.storeVaultKey(utf8.encode(passphrase));
+      await keystore.setUnlockMethod('deviceCredential');
+      ref.invalidate(deviceCredentialEnabledProvider);
       ref.invalidate(biometricEnabledProvider);
     } finally {
       if (mounted) setState(() => _toggling = false);
@@ -928,13 +1053,16 @@ class _PinTileState extends ConsumerState<_PinTile> {
       // they can still layer real biometric back on via the Settings toggle.
       await keystore.setUnlockMethod('pin');
 
-      // Update stored vault key for biometric
-      final bioEnabled = await keystore.isBiometricEnabled();
-      if (bioEnabled) {
+      // Update the stored vault key so an already-configured biometric or
+      // device-credential unlock keeps working with the new PIN-inclusive
+      // passphrase, instead of quietly going stale.
+      if (await keystore.getVaultKey() != null) {
         await keystore.storeVaultKey(utf8.encode(newPassphrase));
       }
 
       ref.invalidate(pinEnabledProvider);
+      ref.invalidate(biometricEnabledProvider);
+      ref.invalidate(deviceCredentialEnabledProvider);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -981,8 +1109,9 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
       await keystore.setPinEnabled(true);
 
-      final bioEnabled = await keystore.isBiometricEnabled();
-      if (bioEnabled) {
+      // Same reasoning as _setupPin: keep an already-configured biometric or
+      // device-credential unlock working with the new passphrase.
+      if (await keystore.getVaultKey() != null) {
         await keystore.storeVaultKey(utf8.encode(newPassphrase));
       }
 
@@ -1024,17 +1153,23 @@ class _PinTileState extends ConsumerState<_PinTile> {
 
       await keystore.clearPin();
 
-      // The 'biometric' method is a PIN add-on — without a PIN it's not a
-      // supported state, so fall back to the master password and drop the
-      // now-orphaned biometric flag rather than leaving a stale toggle.
-      final bioEnabled = await keystore.isBiometricEnabled();
-      if (bioEnabled) {
+      // 'biometric' and 'deviceCredential' are both PIN add-ons — without a
+      // PIN neither is a supported state, so fall back to the master
+      // password and drop the now-orphaned biometric flag rather than
+      // leaving a stale toggle. The stored vault key goes too: it was
+      // derived from the old password+PIN passphrase, which the rekey above
+      // just invalidated, so keeping it around would only offer a "Use
+      // device screen lock" fallback that's guaranteed to fail.
+      final method = await keystore.getUnlockMethod();
+      if (method == 'biometric' || method == 'deviceCredential') {
         await keystore.setBiometricEnabled(false);
+        await keystore.clearVaultKey();
       }
       await keystore.setUnlockMethod('password');
 
       ref.invalidate(pinEnabledProvider);
       ref.invalidate(biometricEnabledProvider);
+      ref.invalidate(deviceCredentialEnabledProvider);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
