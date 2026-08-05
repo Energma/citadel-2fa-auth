@@ -26,6 +26,13 @@ class VaultDatabase {
       path,
       password: passphrase,
       version: _dbVersion,
+      // SQLite never enforces FOREIGN KEY constraints unless this is set on
+      // the connection — without it, the declared `ON DELETE CASCADE` /
+      // `ON DELETE SET NULL` rules below are inert, and deleting a profile
+      // only removes that one row, leaving its groups and tokens dangling.
+      // Must run in onConfigure: it runs before onCreate/onUpgrade and
+      // outside their transaction, which PRAGMA foreign_keys requires.
+      onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
