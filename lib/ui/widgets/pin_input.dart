@@ -30,6 +30,14 @@ class PinInput extends StatefulWidget {
 }
 
 class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin {
+  // Must match the dot's AnimatedContainer duration below — clearing _pin
+  // before the fill transition finishes reverses it mid-flight, so the last
+  // dot never reaches a fully-filled, fully-opaque state. A single deferred
+  // frame isn't enough: on light backgrounds a barely-started fill still
+  // reads as "filled" by contrast, but the same sliver of color is
+  // essentially invisible against a dark background.
+  static const _dotFillDuration = Duration(milliseconds: 150);
+
   String _pin = '';
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
@@ -71,13 +79,11 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     // Auto-submit only when there's no explicit submit button (fast unlock).
     // Clear the entered PIN as we submit so the dots reset for the next try
     // even when the error message is identical to the previous attempt's.
-    // The reset is deferred a frame so the last dot's filled state actually
-    // paints before it's cleared — clearing in the same setState call as the
-    // digit that completes the PIN gets coalesced into one rebuild, so that
-    // frame is never shown.
+    // The reset is deferred until the last dot's fill animation has actually
+    // finished painting, instead of just one frame in — see _dotFillDuration.
     if (_pin.length == widget.length && widget.submitLabel == null) {
       final value = _pin;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(_dotFillDuration, () {
         if (mounted) setState(() => _pin = '');
       });
       widget.onCompleted(value);
@@ -88,7 +94,7 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
     if (_pin.length != widget.length) return;
     HapticFeedback.lightImpact();
     final value = _pin;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future.delayed(_dotFillDuration, () {
       if (mounted) setState(() => _pin = '');
     });
     widget.onCompleted(value);
@@ -145,7 +151,7 @@ class _PinInputState extends State<PinInput> with SingleTickerProviderStateMixin
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
+                  duration: _dotFillDuration,
                   width: filled ? 16 : 14,
                   height: filled ? 16 : 14,
                   // On a wrong PIN the dots simply reset to their empty,
