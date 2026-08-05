@@ -452,8 +452,14 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
 
           const SizedBox(height: 12),
 
-          // Group selector
-          groups.when(
+          // Group selector — scoped to the selected profile so profiles with
+          // same-named groups don't show each other's groups mixed together.
+          // groupListProvider follows the Home screen's active tab, not this
+          // form's own Profile field, so it can't be reused here directly.
+          (_profileId == null
+                  ? groups
+                  : ref.watch(groupsByProfileProvider(_profileId!)))
+              .when(
             data: (groupList) {
               if (groupList.isEmpty) return const SizedBox.shrink();
               final selected =

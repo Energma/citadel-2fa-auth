@@ -60,7 +60,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _rebuildTabs(List<Profile> profiles) {
-    if (_listEquals(profiles, _profiles)) return;
+    // _profiles starts as [] (see field declaration), so a cold start with
+    // zero profiles would otherwise match on the very first call and skip
+    // creating the controller entirely — permanently hiding the tab bar
+    // (and its "manage profiles & groups" button) for the rest of this
+    // widget's life, since nothing else ever retries the creation.
+    if (_tabController != null && _listEquals(profiles, _profiles)) return;
     _profiles = profiles;
     final oldIndex = _tabController?.index ?? 0;
     _tabController?.dispose();
