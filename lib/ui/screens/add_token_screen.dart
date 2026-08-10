@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/crypto/otp_engine.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
+import '../widgets/group_icon.dart';
 import '../widgets/qr_scanner.dart';
 
 class AddTokenScreen extends ConsumerStatefulWidget {
@@ -474,7 +475,8 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                       : groupList.firstWhere((g) => g.id == id).name,
                   leadingOf: (id) => id == null
                       ? null
-                      : Icon(Icons.folder_rounded,
+                      : groupIcon(
+                          groupList.firstWhere((g) => g.id == id).iconName,
                           color: theme.colorScheme.primary),
                   onSelected: (v) => setState(() => _groupId = v),
                 ),
@@ -505,7 +507,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                   child: Row(
                     children: [
                       if (selected != null) ...[
-                        Icon(Icons.folder_rounded,
+                        groupIcon(selected.iconName,
                             size: 16, color: theme.colorScheme.primary),
                         const SizedBox(width: 8),
                       ],
