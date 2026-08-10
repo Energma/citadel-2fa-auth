@@ -163,9 +163,7 @@ class _TokenCardState extends State<TokenCard>
                 border: Border.all(
                   color: isExpiring
                       ? Colors.redAccent.withAlpha(60)
-                      : (isDark
-                          ? Colors.white.withAlpha(8)
-                          : Colors.black.withAlpha(8)),
+                      : theme.colorScheme.onSurface.withAlpha(8),
                   width: 1,
                 ),
                 boxShadow: [

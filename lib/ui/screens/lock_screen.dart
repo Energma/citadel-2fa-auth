@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
-import '../../ui/theme/palette.dart';
 import '../widgets/pin_input.dart';
 
 /// The one unlock method the screen is currently showing. Exactly one primary
@@ -338,7 +337,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                         'assets/logo/energma_logo.png',
                         width: 20,
                         height: 20,
-                        color: Palette.primary,
+                        color: theme.colorScheme.onSurface,
                       ),
                       const SizedBox(width: 4),
                       Text(

@@ -258,7 +258,6 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
   Widget _buildManualForm(ThemeData theme) {
     final profiles = ref.watch(profileListProvider);
     final groups = ref.watch(groupListProvider);
-    final isDark = theme.brightness == Brightness.dark;
 
     return SingleChildScrollView(
       // Bottom padding leaves room for the system nav bar so the CTA button
@@ -530,9 +529,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
           // Advanced settings
           Container(
             decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withAlpha(6)
-                  : Colors.black.withAlpha(6),
+              color: theme.colorScheme.onSurface.withAlpha(6),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Theme(
@@ -712,14 +709,10 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withAlpha(8)
-              : Colors.black.withAlpha(8),
+          color: theme.colorScheme.onSurface.withAlpha(8),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDark
-                ? Colors.white.withAlpha(12)
-                : Colors.black.withAlpha(8),
+            color: theme.colorScheme.onSurface.withAlpha(isDark ? 12 : 8),
           ),
         ),
         child: Row(

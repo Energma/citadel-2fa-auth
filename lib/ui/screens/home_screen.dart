@@ -274,9 +274,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           color: theme.colorScheme.surface,
           border: Border(
             top: BorderSide(
-              color: isDark
-                  ? Colors.white.withAlpha(15)
-                  : Colors.black.withAlpha(15),
+              color: theme.colorScheme.onSurface.withAlpha(15),
             ),
           ),
         ),
@@ -548,14 +546,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withAlpha(6)
-                : Colors.black.withAlpha(6),
+            color: theme.colorScheme.onSurface.withAlpha(6),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withAlpha(10)
-                  : Colors.black.withAlpha(10),
+              color: theme.colorScheme.onSurface.withAlpha(10),
             ),
           ),
           child: Theme(
