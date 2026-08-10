@@ -6,7 +6,7 @@ import '../../core/models/profile.dart';
 
 class VaultDatabase {
   static const String _dbName = 'citadel_vault.db';
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
 
   Database? _database;
 
@@ -103,6 +103,7 @@ class VaultDatabase {
         profileId TEXT NOT NULL,
         name TEXT NOT NULL,
         sortOrder INTEGER NOT NULL DEFAULT 0,
+        iconName TEXT,
         FOREIGN KEY (profileId) REFERENCES profiles(id) ON DELETE CASCADE
       )
     ''');
@@ -191,6 +192,11 @@ class VaultDatabase {
       // Add General section's per-profile position for Home-screen reorder.
       await db.execute(
           'ALTER TABLE profiles ADD COLUMN generalSortOrder INTEGER NOT NULL DEFAULT -1');
+    }
+
+    if (oldVersion < 5) {
+      // Add the user-picked emoji icon for groups.
+      await db.execute('ALTER TABLE groups ADD COLUMN iconName TEXT');
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import '../../core/models/profile.dart';
 import '../../core/providers.dart';
 import '../theme/palette.dart';
+import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -545,8 +546,8 @@ class _GroupTab extends ConsumerWidget {
                     return Card(
                       key: ValueKey(g.id),
                       child: ListTile(
-                        leading: Icon(Icons.folder_rounded,
-                            color: theme.colorScheme.primary),
+                        leading: groupIcon(g.iconName,
+                            size: 24, color: theme.colorScheme.primary),
                         title: Text(g.name),
                         trailing: PopupMenuButton(
                           itemBuilder: (_) => [
@@ -597,74 +598,85 @@ class _GroupTab extends ConsumerWidget {
     final nameController =
         TextEditingController(text: existing?.name ?? '');
     final theme = Theme.of(context);
+    var selectedIcon = existing?.iconName;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'Add Group' : 'Rename Group'),
-        content: TextField(
-          controller: nameController,
-          decoration: InputDecoration(
-            labelText: 'Group Name',
-            hintText: 'e.g. Social, Banking, Dev',
-            prefixIcon: const Icon(Icons.folder_outlined),
-            filled: true,
-            fillColor: theme.colorScheme.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withAlpha(80),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text(existing == null ? 'Add Group' : 'Rename Group'),
+          content: TextField(
+            controller: nameController,
+            decoration: InputDecoration(
+              labelText: 'Group Name',
+              hintText: 'e.g. Social, Banking, Dev',
+              prefixIcon: InkWell(
+                onTap: () async {
+                  final picked = await pickGroupIcon(ctx);
+                  if (picked != null) setState(() => selectedIcon = picked);
+                },
+                child: groupIcon(selectedIcon, color: theme.colorScheme.primary),
               ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withAlpha(60),
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                ),
               ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.primary,
-                width: 2,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(60),
+                ),
               ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
             ),
-            floatingLabelBehavior: FloatingLabelBehavior.auto,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
           ),
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isEmpty) return;
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx);
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
 
-              // Adding and renaming are non-destructive — no master password.
-              // Awaited, not fire-and-forget: a swallowed database error would
-              // otherwise close the dialog as if the group had been saved.
-              final repo = ref.read(profileRepositoryProvider);
-              if (existing != null) {
-                await repo.updateGroup(existing.copyWith(name: name));
-              } else {
-                await repo.addGroup(TokenGroup(
-                  profileId: profileId,
-                  name: name,
-                ));
-              }
-              // Both: the home list and the per-profile list on this screen.
-              ref.invalidate(groupListProvider);
-              ref.invalidate(groupsByProfileProvider);
-            },
-            child: Text(existing == null ? 'Add' : 'Save'),
-          ),
-        ],
+                // Adding and renaming are non-destructive — no master password.
+                // Awaited, not fire-and-forget: a swallowed database error would
+                // otherwise close the dialog as if the group had been saved.
+                final repo = ref.read(profileRepositoryProvider);
+                if (existing != null) {
+                  await repo.updateGroup(
+                      existing.copyWith(name: name, iconName: selectedIcon));
+                } else {
+                  await repo.addGroup(TokenGroup(
+                    profileId: profileId,
+                    name: name,
+                    iconName: selectedIcon,
+                  ));
+                }
+                // Both: the home list and the per-profile list on this screen.
+                ref.invalidate(groupListProvider);
+                ref.invalidate(groupsByProfileProvider);
+              },
+              child: Text(existing == null ? 'Add' : 'Save'),
+            ),
+          ],
+        ),
       ),
     );
   }

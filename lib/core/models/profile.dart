@@ -75,20 +75,25 @@ class TokenGroup {
   final String profileId;
   final String name;
   final int sortOrder;
+  // User-picked emoji for this group's icon; null falls back to the
+  // default folder icon wherever the group is rendered.
+  final String? iconName;
 
   TokenGroup({
     String? id,
     required this.profileId,
     required this.name,
     this.sortOrder = 0,
+    this.iconName,
   }) : id = id ?? const Uuid().v4();
 
-  TokenGroup copyWith({String? name, int? sortOrder}) {
+  TokenGroup copyWith({String? name, int? sortOrder, String? iconName}) {
     return TokenGroup(
       id: id,
       profileId: profileId,
       name: name ?? this.name,
       sortOrder: sortOrder ?? this.sortOrder,
+      iconName: iconName ?? this.iconName,
     );
   }
 
@@ -98,6 +103,7 @@ class TokenGroup {
       'profileId': profileId,
       'name': name,
       'sortOrder': sortOrder,
+      'iconName': iconName,
     };
   }
 
@@ -107,6 +113,7 @@ class TokenGroup {
       profileId: map['profileId'] as String,
       name: map['name'] as String,
       sortOrder: map['sortOrder'] as int,
+      iconName: map['iconName'] as String?,
     );
   }
 }

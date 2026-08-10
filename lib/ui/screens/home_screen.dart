@@ -5,6 +5,7 @@ import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../widgets/token_card.dart';
+import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
 import 'add_token_screen.dart';
 import 'settings_screen.dart';
@@ -538,7 +539,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       List<Token> tokens, int index) {
     final isGeneral = group == null;
     final name = isGeneral ? 'General' : group.name;
-    final icon = isGeneral ? Icons.apps_rounded : Icons.folder_rounded;
+    final leadingIconColor = isGeneral
+        ? theme.colorScheme.onSurface.withAlpha(140)
+        : theme.colorScheme.primary.withAlpha(180);
+    final leadingIcon = isGeneral
+        ? Icon(Icons.apps_rounded, size: 18, color: leadingIconColor)
+        : groupIcon(group.iconName, size: 18, color: leadingIconColor);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -604,13 +610,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ),
               title: Row(
                 children: [
-                  Icon(
-                    icon,
-                    size: 18,
-                    color: isGeneral
-                        ? theme.colorScheme.onSurface.withAlpha(140)
-                        : theme.colorScheme.primary.withAlpha(180),
-                  ),
+                  leadingIcon,
                   const SizedBox(width: 10),
                   Text(
                     name,
@@ -756,9 +756,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ctx, _MoveResult(groupId: '__none__')),
                   ),
                   ...groups.map((g) => ListTile(
-                        leading: Icon(Icons.folder_rounded,
-                            size: 20,
-                            color: theme.colorScheme.primary),
+                        leading: groupIcon(g.iconName,
+                            size: 20, color: theme.colorScheme.primary),
                         title: Text(g.name),
                         dense: true,
                         selected: token.groupId == g.id,
