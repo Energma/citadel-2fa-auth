@@ -2,16 +2,20 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
-import '../../ui/theme/palette.dart';
 import '../widgets/pin_input.dart';
 
 /// The one unlock method the screen is currently showing. Exactly one primary
 /// view renders at a time — the others are reachable through flat fallback
 /// links, never stacked on the same screen.
-enum _UnlockMethod { biometric, pin, password }
+///
+/// [biometric] is true fingerprint/face unlock layered on an app PIN;
+/// [deviceCredential] is the phone's own screen lock (PIN/pattern/biometric
+/// via the OS) with no separate app PIN. Both drive the same native prompt
+/// via [BiometricService], but render different waiting views since only
+/// [biometric] is guaranteed to actually be a fingerprint/face scan.
+enum _UnlockMethod { biometric, deviceCredential, pin, password }
 
 class LockScreen extends ConsumerStatefulWidget {
   const LockScreen({super.key});
@@ -29,6 +33,15 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   bool _pinEnabled = false;
   bool _biometricUsable = false;
   bool _initialized = false;
+
+  /// A stored vault key means the device's screen lock (Pattern/PIN/
+  /// biometric) is set up to unlock this vault right now — independent of
+  /// whatever [_primaryMethod] resolves to. Both the "Biometric Unlock" and
+  /// "Device Unlock" Settings toggles clear this key when turned off, so
+  /// this only stays true while one of them is actually enabled; it exists
+  /// separately from [_primaryMethod] because a stored key can outlive a
+  /// PIN change/removal that demotes it from primary without disabling it.
+  bool _hasStoredVaultKey = false;
 
   /// What the user actually unlocks with day-to-day; fallback links always
   /// offer a way back here so a mis-tap can't strand them on the password form.
@@ -51,25 +64,50 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     final biometric = ref.read(biometricServiceProvider);
 
     final pinEnabled = await keystore.isPinEnabled();
-    final biometricEnabled = await keystore.isBiometricEnabled();
-    // Enabled in settings is not enough — the device must still be able to do
-    // it (credential removed, biometrics unenrolled).
-    final biometricUsable = biometricEnabled && await biometric.isAvailable();
+    final unlockMethod = await keystore.getUnlockMethod();
+
+    _UnlockMethod primary;
+    var biometricUsable = false;
+
+    if (unlockMethod == 'biometric') {
+      // A true fingerprint/face scan layered on the PIN — only trust this if
+      // the sensor is actually there. Checking with the same broad signal
+      // [deviceCredential] uses below would count a bare PIN/pattern screen
+      // lock as "biometric available" and flash the fingerprint view at
+      // someone who has no sensor at all. Falls back to the PIN it's
+      // layered on, same as if biometric had never been enabled.
+      biometricUsable = await biometric.hasBiometricHardware();
+      primary = biometricUsable
+          ? _UnlockMethod.biometric
+          : (pinEnabled ? _UnlockMethod.pin : _UnlockMethod.password);
+    } else if (unlockMethod == 'deviceCredential') {
+      // Just needs *some* secure lock screen (PIN/pattern/password/biometric)
+      // — the same check setup already required before this could be chosen,
+      // so it's trusted here rather than re-verified live. Re-checking
+      // availability at unlock time is exactly what used to dump these users
+      // straight onto the master-password view with no way back to the
+      // screen-lock option at all whenever that live check came back wrong.
+      primary = _UnlockMethod.deviceCredential;
+    } else {
+      primary = pinEnabled ? _UnlockMethod.pin : _UnlockMethod.password;
+    }
+
+    final hasStoredVaultKey = await keystore.getVaultKey() != null;
 
     if (!mounted) return;
     setState(() {
       _pinEnabled = pinEnabled;
       _biometricUsable = biometricUsable;
-      _primaryMethod = biometricUsable
-          ? _UnlockMethod.biometric
-          : pinEnabled
-              ? _UnlockMethod.pin
-              : _UnlockMethod.password;
-      _method = _primaryMethod;
+      _hasStoredVaultKey = hasStoredVaultKey;
+      _primaryMethod = primary;
+      _method = primary;
       _initialized = true;
     });
 
-    if (biometricUsable) await _tryBiometric();
+    if (primary == _UnlockMethod.biometric ||
+        primary == _UnlockMethod.deviceCredential) {
+      await _tryBiometric();
+    }
   }
 
   @override
@@ -214,6 +252,15 @@ class _LockScreenState extends ConsumerState<LockScreen> {
     });
   }
 
+  /// Same as [_switchTo] but also fires the native prompt immediately,
+  /// matching what happens when device-credential unlock is the primary
+  /// method — used when it's reached as a secondary option instead (see
+  /// [_hasStoredVaultKey]), where auto-prompting on init doesn't apply.
+  Future<void> _switchToDeviceCredential() async {
+    _switchTo(_UnlockMethod.deviceCredential);
+    await _tryBiometric();
+  }
+
   Widget _buildFooterLink(String text, String url, ThemeData theme) {
     return GestureDetector(
       onTap: () => launchUrl(Uri.parse(url)),
@@ -242,6 +289,8 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                     ? const CircularProgressIndicator()
                     : switch (_method) {
                         _UnlockMethod.biometric => _buildBiometricView(theme),
+                        _UnlockMethod.deviceCredential =>
+                          _buildDeviceCredentialView(theme),
                         _UnlockMethod.pin => _buildPinView(theme),
                         _UnlockMethod.password => _buildPasswordView(theme),
                       },
@@ -288,7 +337,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
                         'assets/logo/energma_logo.png',
                         width: 20,
                         height: 20,
-                        color: Palette.primary,
+                        color: theme.colorScheme.onSurface,
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -315,7 +364,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   /// between them doesn't visually reflow the top of the screen.
   List<Widget> _buildHeader(ThemeData theme, String subtitle) {
     return [
-      SvgPicture.asset('assets/logo/citadel_logo.svg', width: 72, height: 72),
+      Image.asset('assets/logo/citadel-logo.png', width: 72, height: 72),
       const SizedBox(height: 16),
       Text(
         'Citadel Auth',
@@ -384,6 +433,60 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           // With a PIN enabled the vault passphrase is password+PIN, so the
           // password view can't work (and would sidestep the persisted PIN
           // lockout) — PIN is the only knowledge fallback in that case.
+          if (_pinEnabled)
+            _buildSwitchLink('Use PIN', _UnlockMethod.pin)
+          else
+            _buildSwitchLink('Use master password', _UnlockMethod.password),
+        ],
+      ),
+    );
+  }
+
+  /// Same native prompt as [_buildBiometricView], but for the "phone's screen
+  /// lock" method the prompt may end up being a PIN/pattern entry rather than
+  /// a sensor scan — so no fingerprint icon is shown here, unlike the true
+  /// biometric view, to avoid flashing a misleading graphic before the actual
+  /// OS prompt appears.
+  Widget _buildDeviceCredentialView(ThemeData theme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ..._buildHeader(theme, 'Unlock your vault'),
+          const SizedBox(height: 48),
+          IconButton(
+            onPressed: _loading ? null : _tryBiometric,
+            iconSize: 64,
+            padding: const EdgeInsets.all(20),
+            style: IconButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary.withAlpha(20),
+              foregroundColor: theme.colorScheme.primary,
+            ),
+            icon: const Icon(Icons.lock_open_rounded),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Confirm using your device screen lock',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withAlpha(120),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          const SizedBox(height: 32),
+          // Device-credential unlock can be layered on an app PIN (see
+          // Settings' "Device Unlock" toggle) — in that case the vault
+          // passphrase includes the PIN, so a raw master password can't
+          // decrypt it and PIN must be the fallback instead.
           if (_pinEnabled)
             _buildSwitchLink('Use PIN', _UnlockMethod.pin)
           else
@@ -496,10 +599,23 @@ class _LockScreenState extends ConsumerState<LockScreen> {
           if (_primaryMethod != _UnlockMethod.password) ...[
             const SizedBox(height: 16),
             _buildSwitchLink(
-              _primaryMethod == _UnlockMethod.biometric
-                  ? 'Use biometrics'
-                  : 'Use PIN',
+              switch (_primaryMethod) {
+                _UnlockMethod.biometric => 'Use biometrics',
+                _UnlockMethod.deviceCredential => 'Use device screen lock',
+                _UnlockMethod.pin => 'Use PIN',
+                _UnlockMethod.password => 'Use master password',
+              },
               _primaryMethod,
+            ),
+          ] else if (_hasStoredVaultKey) ...[
+            // Not the primary method (e.g. Biometric Unlock was switched off
+            // in Settings), but the device's screen lock was set up for this
+            // vault at some point and still works — don't strand the user on
+            // password-only just because the toggle no longer says so.
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: _loading ? null : _switchToDeviceCredential,
+              child: const Text('Use device screen lock'),
             ),
           ],
         ],

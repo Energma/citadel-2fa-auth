@@ -146,6 +146,70 @@ void main() {
     }
   });
 
+  group('OtpEngine - HOTP with SHA256/SHA512', () {
+    // Golden values cross-checked independently via Python's hmac/hashlib
+    // against the same secrets used by the RFC 6238 TOTP group above (counter
+    // 1 matches the TOTP time=59 vector for each algorithm, since TOTP is
+    // HOTP with the time-step as the counter).
+    const sha256Secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA';
+    const sha512Secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA';
+
+    final expectedSha256 = [
+      '18920136',
+      '46119246',
+      '30882438',
+      '02975832',
+      '54791148',
+      '89744399',
+      '75668833',
+      '11276785',
+      '53778880',
+      '43242340',
+    ];
+    final expectedSha512 = [
+      '53550594',
+      '90693936',
+      '68765371',
+      '02628588',
+      '03977270',
+      '59407012',
+      '30383831',
+      '21656234',
+      '77504704',
+      '56467051',
+    ];
+
+    for (var i = 0; i < expectedSha256.length; i++) {
+      test('SHA256 counter=$i produces ${expectedSha256[i]}', () {
+        final token = Token(
+          issuer: 'test',
+          account: 'test',
+          secret: sha256Secret,
+          type: OtpType.hotp,
+          algorithm: Algorithm.sha256,
+          digits: 8,
+          counter: i,
+        );
+        expect(OtpEngine.generateHotp(token), expectedSha256[i]);
+      });
+    }
+
+    for (var i = 0; i < expectedSha512.length; i++) {
+      test('SHA512 counter=$i produces ${expectedSha512[i]}', () {
+        final token = Token(
+          issuer: 'test',
+          account: 'test',
+          secret: sha512Secret,
+          type: OtpType.hotp,
+          algorithm: Algorithm.sha512,
+          digits: 8,
+          counter: i,
+        );
+        expect(OtpEngine.generateHotp(token), expectedSha512[i]);
+      });
+    }
+  });
+
   group('OtpEngine - remainingSeconds', () {
     test('returns correct remaining seconds', () {
       final token = Token(

@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import '../../core/models/profile.dart';
 import '../../core/providers.dart';
 import '../theme/palette.dart';
+import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -361,30 +362,55 @@ class _GroupTab extends ConsumerWidget {
           );
         }
 
+        final currentProfile =
+            profileList.firstWhereOrNull((p) => p.id == currentProfileId);
+
         return Column(
           children: [
             if (profileList.length > 1)
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: DropdownButtonFormField<String>(
-                  value: currentProfileId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Profile'),
-                  items: profileList
-                      .map((p) => DropdownMenuItem(
-                            value: p.id,
-                            child: Row(
-                              children: [
-                                CircleAvatar(backgroundColor: p.color, radius: 6),
-                                const SizedBox(width: 8),
-                                Text(p.name),
-                              ],
-                            ),
-                          ))
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) onProfileSelected?.call(v);
-                  },
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _showProfilePicker(
+                      context, profileList, currentProfileId, onProfileSelected),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Profile',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline.withAlpha(80),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outline.withAlpha(60),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                      floatingLabelBehavior: FloatingLabelBehavior.auto,
+                    ),
+                    child: Row(
+                      children: [
+                        if (currentProfile != null) ...[
+                          CircleAvatar(
+                              backgroundColor: currentProfile.color, radius: 6),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(child: Text(currentProfile?.name ?? '')),
+                        Icon(Icons.arrow_drop_down_rounded,
+                            color: theme.colorScheme.onSurface.withAlpha(140)),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             Expanded(
@@ -396,6 +422,60 @@ class _GroupTab extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+
+  void _showProfilePicker(BuildContext context, List<Profile> profileList,
+      String? current, ValueChanged<String>? onSelected) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withAlpha(40),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text('Profile',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 8),
+                ...profileList.map((p) => ListTile(
+                      leading:
+                          CircleAvatar(backgroundColor: p.color, radius: 6),
+                      title: Text(p.name),
+                      trailing: p.id == current
+                          ? Icon(Icons.check_rounded,
+                              color: theme.colorScheme.primary)
+                          : null,
+                      onTap: () {
+                        onSelected?.call(p.id);
+                        Navigator.pop(ctx);
+                      },
+                    )),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -466,8 +546,8 @@ class _GroupTab extends ConsumerWidget {
                     return Card(
                       key: ValueKey(g.id),
                       child: ListTile(
-                        leading: Icon(Icons.folder_rounded,
-                            color: theme.colorScheme.primary),
+                        leading: groupIcon(g.iconName,
+                            size: 24, color: theme.colorScheme.primary),
                         title: Text(g.name),
                         trailing: PopupMenuButton(
                           itemBuilder: (_) => [
@@ -518,74 +598,85 @@ class _GroupTab extends ConsumerWidget {
     final nameController =
         TextEditingController(text: existing?.name ?? '');
     final theme = Theme.of(context);
+    var selectedIcon = existing?.iconName;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'Add Group' : 'Rename Group'),
-        content: TextField(
-          controller: nameController,
-          decoration: InputDecoration(
-            labelText: 'Group Name',
-            hintText: 'e.g. Social, Banking, Dev',
-            prefixIcon: const Icon(Icons.folder_outlined),
-            filled: true,
-            fillColor: theme.colorScheme.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withAlpha(80),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text(existing == null ? 'Add Group' : 'Rename Group'),
+          content: TextField(
+            controller: nameController,
+            decoration: InputDecoration(
+              labelText: 'Group Name',
+              hintText: 'e.g. Social, Banking, Dev',
+              prefixIcon: InkWell(
+                onTap: () async {
+                  final picked = await pickGroupIcon(ctx);
+                  if (picked != null) setState(() => selectedIcon = picked);
+                },
+                child: groupIcon(selectedIcon, color: theme.colorScheme.primary),
               ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.outline.withAlpha(60),
+              filled: true,
+              fillColor: theme.colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(80),
+                ),
               ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: theme.colorScheme.primary,
-                width: 2,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.outline.withAlpha(60),
+                ),
               ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
             ),
-            floatingLabelBehavior: FloatingLabelBehavior.auto,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
           ),
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isEmpty) return;
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx);
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isEmpty) return;
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
 
-              // Adding and renaming are non-destructive — no master password.
-              // Awaited, not fire-and-forget: a swallowed database error would
-              // otherwise close the dialog as if the group had been saved.
-              final repo = ref.read(profileRepositoryProvider);
-              if (existing != null) {
-                await repo.updateGroup(existing.copyWith(name: name));
-              } else {
-                await repo.addGroup(TokenGroup(
-                  profileId: profileId,
-                  name: name,
-                ));
-              }
-              // Both: the home list and the per-profile list on this screen.
-              ref.invalidate(groupListProvider);
-              ref.invalidate(groupsByProfileProvider);
-            },
-            child: Text(existing == null ? 'Add' : 'Save'),
-          ),
-        ],
+                // Adding and renaming are non-destructive — no master password.
+                // Awaited, not fire-and-forget: a swallowed database error would
+                // otherwise close the dialog as if the group had been saved.
+                final repo = ref.read(profileRepositoryProvider);
+                if (existing != null) {
+                  await repo.updateGroup(
+                      existing.copyWith(name: name, iconName: selectedIcon));
+                } else {
+                  await repo.addGroup(TokenGroup(
+                    profileId: profileId,
+                    name: name,
+                    iconName: selectedIcon,
+                  ));
+                }
+                // Both: the home list and the per-profile list on this screen.
+                ref.invalidate(groupListProvider);
+                ref.invalidate(groupsByProfileProvider);
+              },
+              child: Text(existing == null ? 'Add' : 'Save'),
+            ),
+          ],
+        ),
       ),
     );
   }

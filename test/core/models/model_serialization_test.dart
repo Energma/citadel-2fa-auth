@@ -126,6 +126,7 @@ void main() {
         colorValue: 0xFF2196F3,
         iconName: 'home',
         sortOrder: 2,
+        generalSortOrder: 1,
         createdAt: created,
       );
       final restored = Profile.fromMap(profile.toMap());
@@ -135,7 +136,14 @@ void main() {
       expect(restored.color, const Color(0xFF2196F3));
       expect(restored.iconName, 'home');
       expect(restored.sortOrder, 2);
+      expect(restored.generalSortOrder, 1);
       expect(restored.createdAt, created);
+    });
+
+    test('defaults generalSortOrder to -1 when omitted', () {
+      final profile = Profile(name: 'Work', colorValue: 0xFF06B6D4);
+      final restored = Profile.fromMap(profile.toMap());
+      expect(restored.generalSortOrder, -1);
     });
   });
 

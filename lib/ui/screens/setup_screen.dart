@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import 'pin_setup_screen.dart';
@@ -63,35 +62,55 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   /// the vault passphrase, so the PIN is a real factor in the encryption key.
   Future<void> _createWithAppPin(String password) async {
     if (!mounted) return;
+    // Creating the vault below unlocks it, which triggers app-level
+    // navigation away from this screen — disposing it — before this
+    // function finishes. Read providers through the container (which
+    // outlives this widget) rather than `ref` from this point on.
+    final container = ProviderScope.containerOf(context, listen: false);
     final pin = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => const PinSetupScreen()),
     );
     if (pin == null) return; // Cancelled PIN setup — abort vault creation
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     final passphrase = '$password$pin';
-    final success = await ref.read(vaultProvider.notifier).createVault(passphrase);
+    final success =
+        await container.read(vaultProvider.notifier).createVault(passphrase);
 
     if (success) {
-      final keystore = ref.read(keystoreServiceProvider);
+      final keystore = container.read(keystoreServiceProvider);
       await keystore.storeMasterPassword(password);
       // The PIN is part of the passphrase above; we only record that PIN unlock
       // is enabled — the PIN itself is never stored.
       await keystore.setPinEnabled(true);
 
-      // Optional biometric convenience on top of the PIN.
+      // Optional biometric convenience on top of the PIN. Requires real
+      // fingerprint/face hardware — isAvailable() alone would also pass for
+      // a device with nothing but a PIN/pattern screen lock, which isn't
+      // "biometric" and would flash a fingerprint prompt that can never work.
+      var usesBiometric = false;
       if (_enableBiometric) {
-        final biometric = ref.read(biometricServiceProvider);
-        if (await biometric.isAvailable()) {
+        final biometric = container.read(biometricServiceProvider);
+        if (await biometric.hasBiometricHardware()) {
           await keystore.storeVaultKey(utf8.encode(passphrase));
           await keystore.setBiometricEnabled(true);
+          usesBiometric = true;
         }
       }
+      await keystore.setUnlockMethod(usesBiometric ? 'biometric' : 'pin');
+      // Refresh the cached flags — a vault deleted and recreated earlier in
+      // this app session would otherwise leave the Settings screen showing
+      // whatever PIN/biometric state the previous vault had.
+      container.invalidate(pinEnabledProvider);
+      container.invalidate(biometricEnabledProvider);
+      container.invalidate(deviceCredentialEnabledProvider);
     }
 
     if (mounted) {
@@ -104,7 +123,12 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
   /// biometric) gates access; the vault key is derived from the master password
   /// alone and unlocked via the stored vault key after device authentication.
   Future<void> _createWithDeviceLock(String password) async {
-    final biometric = ref.read(biometricServiceProvider);
+    // Creating the vault below unlocks it, which triggers app-level
+    // navigation away from this screen — disposing it — before this
+    // function finishes. Read providers through the container (which
+    // outlives this widget) rather than `ref` from this point on.
+    final container = ProviderScope.containerOf(context, listen: false);
+    final biometric = container.read(biometricServiceProvider);
     if (!await biometric.isAvailable()) {
       if (mounted) {
         setState(() => _error =
@@ -114,20 +138,32 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
       return;
     }
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
-    final success = await ref.read(vaultProvider.notifier).createVault(password);
+    final success =
+        await container.read(vaultProvider.notifier).createVault(password);
 
     if (success) {
-      final keystore = ref.read(keystoreServiceProvider);
+      final keystore = container.read(keystoreServiceProvider);
       await keystore.storeMasterPassword(password);
       // No PIN hash — pinEnabled stays false. The stored vault key lets the
       // lock screen unlock after the device-credential prompt succeeds.
       await keystore.storeVaultKey(utf8.encode(password));
-      await keystore.setBiometricEnabled(true);
+      // Device-credential unlock, not biometric — setUnlockMethod below is
+      // what the lock screen and Settings actually branch on. Do NOT also
+      // set the biometric flag here: the two are separate unlock methods.
+      await keystore.setUnlockMethod('deviceCredential');
+      // See the matching comment in _createWithAppPin — without this, a
+      // stale cached PIN/biometric flag from a previously deleted vault
+      // would leak into this new vault's Settings screen.
+      container.invalidate(pinEnabledProvider);
+      container.invalidate(biometricEnabledProvider);
+      container.invalidate(deviceCredentialEnabledProvider);
     }
 
     if (mounted) {
@@ -221,7 +257,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      SvgPicture.asset('assets/logo/citadel_logo.svg', width: 72, height: 72),
+                      Image.asset('assets/logo/citadel-logo.png', width: 72, height: 72),
                       const SizedBox(height: 16),
                       Text(
                         'Welcome to Citadel',

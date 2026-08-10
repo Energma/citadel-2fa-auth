@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:collection/collection.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../widgets/token_card.dart';
+import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
 import 'add_token_screen.dart';
 import 'settings_screen.dart';
@@ -24,6 +25,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   DateTime? _pausedAt;
   TabController? _tabController;
   List<Profile> _profiles = [];
+
+  // Section order set by a just-completed drag, kept until the DB write and
+  // provider refetch land. orderedSections is recomputed fresh from provider
+  // data on every build, so without this override any unrelated rebuild that
+  // happens mid-persist (NestedScrollView, another watched provider, ...)
+  // would momentarily show the pre-drag order again — a visible flicker.
+  List<String>? _optimisticSectionOrder;
 
   @override
   void initState() {
@@ -53,7 +61,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _rebuildTabs(List<Profile> profiles) {
-    if (_listEquals(profiles, _profiles)) return;
+    // _profiles starts as [] (see field declaration), so a cold start with
+    // zero profiles would otherwise match on the very first call and skip
+    // creating the controller entirely — permanently hiding the tab bar
+    // (and its "manage profiles & groups" button) for the rest of this
+    // widget's life, since nothing else ever retries the creation.
+    if (_tabController != null && _listEquals(profiles, _profiles)) return;
     _profiles = profiles;
     final oldIndex = _tabController?.index ?? 0;
     _tabController?.dispose();
@@ -144,6 +157,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               error: (e, _) => Center(child: Text('Error: $e')),
             ),
           ),
+          bottomNavigationBar:
+              _isSearching ? null : _buildTabBar(theme, isDark),
         );
       },
       loading: () => const Scaffold(
@@ -165,8 +180,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SvgPicture.asset(
-                  'assets/logo/citadel_logo.svg',
+                Image.asset(
+                  'assets/logo/citadel-logo.png',
                   width: 32,
                   height: 32,
                 ),
@@ -227,7 +242,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         const SizedBox(width: 4),
       ],
-      bottom: _isSearching ? null : _buildTabBar(theme, isDark),
     );
   }
 
@@ -248,18 +262,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  PreferredSizeWidget _buildTabBar(ThemeData theme, bool isDark) {
-    if (_tabController == null) {
-      return const PreferredSize(
-        preferredSize: Size.fromHeight(0),
-        child: SizedBox.shrink(),
-      );
-    }
+  Widget _buildTabBar(ThemeData theme, bool isDark) {
+    if (_tabController == null) return const SizedBox.shrink();
 
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(52),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+    // Bottom bar sits above the OS gesture/nav area — SafeArea keeps the
+    // tabs and manage button clear of it instead of letting them get
+    // covered by the native navigation buttons.
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border(
+            top: BorderSide(
+              color: theme.colorScheme.onSurface.withAlpha(15),
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.only(top: 4),
         child: Row(
           children: [
             Expanded(
@@ -270,6 +290,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                 indicatorSize: TabBarIndicatorSize.label,
+                // TabBar's default indicator rect sits a couple pixels lower
+                // than center (more gap above the label than below) — nudge
+                // it up so the selected pill's padding is symmetrical.
+                indicatorPadding: const EdgeInsets.only(top: -2, bottom: 2),
                 indicator: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: theme.colorScheme.primary.withAlpha(isDark ? 40 : 25),
@@ -332,7 +356,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       padding: const EdgeInsets.only(right: 12),
       child: IconButton(
         icon: Icon(
-          Icons.tune_rounded,
+          Icons.add_rounded,
           size: 20,
           color: theme.colorScheme.onSurface.withAlpha(120),
         ),
@@ -376,42 +400,151 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (!shownGroupIds.contains(entry.key)) ungrouped.addAll(entry.value);
     }
 
+    // General's position is scoped like a group's own sortOrder: per-profile
+    // when a specific tab is active, or a device-level setting on "All"
+    // (General there pools every profile's ungrouped tokens, so it can't
+    // live on a single profile row). Read profiles fresh from the provider
+    // rather than the _profiles field — _rebuildTabs only refreshes that
+    // field when a profile's id/name changes (it exists to avoid needlessly
+    // recreating the TabController), so it can hold a stale generalSortOrder
+    // right after this exact reorder persists.
+    final activeProfileId = ref.watch(activeProfileIdProvider);
+    final int generalOrder = activeProfileId == null
+        ? ref.watch(allViewGeneralSortOrderProvider)
+        : (ref.watch(profileListProvider).valueOrNull
+                ?.firstWhereOrNull((p) => p.id == activeProfileId)
+                ?.generalSortOrder ??
+            -1);
+
+    final sections = <_SectionData>[
+      if (ungrouped.isNotEmpty) _SectionData(group: null, tokens: ungrouped),
+      for (final group in orderedGroups)
+        _SectionData(group: group, tokens: grouped[group.id] ?? []),
+    ];
+
+    // Sort stably (with an index tiebreak) — new groups and General can
+    // share the same default order value, and List.sort isn't guaranteed
+    // stable, so without the tiebreak untouched sections could visibly
+    // reshuffle between rebuilds.
+    final indexed = sections.asMap().entries.toList()
+      ..sort((a, b) {
+        int orderOf(_SectionData s) =>
+            s.isGeneral ? generalOrder : s.group!.sortOrder;
+        final cmp = orderOf(a.value).compareTo(orderOf(b.value));
+        return cmp != 0 ? cmp : a.key.compareTo(b.key);
+      });
+    final naturalOrder = indexed.map((e) => e.value).toList();
+
+    // Prefer the just-set drag order over whatever this build recomputed
+    // from provider data, until persistence confirms it. Falls back to
+    // naturalOrder on its own if the section set changed underneath it
+    // (group added/deleted elsewhere) so it can never show something stale.
+    final override = _optimisticSectionOrder;
+    final displaySections = override != null &&
+            override.length == naturalOrder.length &&
+            override.every((id) => naturalOrder.any((s) => s.sectionId == id))
+        ? [
+            for (final id in override)
+              naturalOrder.firstWhere((s) => s.sectionId == id)
+          ]
+        : naturalOrder;
+
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(tokenListProvider);
         ref.invalidate(groupListProvider);
       },
-      child: ListView(
+      child: ReorderableListView.builder(
         padding:
             const EdgeInsets.only(top: 8, bottom: 96, left: 4, right: 4),
-        children: [
-          // Ungrouped tokens in a collapsible "General" section
-          if (ungrouped.isNotEmpty)
-            _buildGroupSection(
-              theme,
-              isDark,
-              null,
-              ungrouped,
-            ),
-
-          // Each group as a collapsible section
-          for (final group in orderedGroups)
-            _buildGroupSection(
-              theme,
-              isDark,
-              group,
-              grouped[group.id] ?? [],
-            ),
-        ],
+        buildDefaultDragHandles: false,
+        itemCount: displaySections.length,
+        onReorder: (oldIndex, newIndex) =>
+            _reorderSections(displaySections, oldIndex, newIndex),
+        itemBuilder: (context, index) {
+          final section = displaySections[index];
+          return KeyedSubtree(
+            key: ValueKey('section_${section.sectionId}'),
+            child: _buildGroupSection(
+                theme, isDark, section.group, section.tokens, index),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildGroupSection(
-      ThemeData theme, bool isDark, TokenGroup? group, List<Token> tokens) {
+  Future<void> _reorderSections(
+      List<_SectionData> sections, int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    final reordered = List<_SectionData>.from(sections);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+
+    // Show the drop result immediately and keep it stable until persistence
+    // completes — see _optimisticSectionOrder's declaration for why this is
+    // necessary rather than just mutating the rendered list in place.
+    setState(() {
+      _optimisticSectionOrder = reordered.map((s) => s.sectionId).toList();
+    });
+
+    final groupOrders = <String, int>{};
+    int? newGeneralOrder;
+    for (var i = 0; i < reordered.length; i++) {
+      final section = reordered[i];
+      if (section.isGeneral) {
+        newGeneralOrder = i;
+      } else {
+        groupOrders[section.group!.id] = i;
+      }
+    }
+
+    final repo = ref.read(profileRepositoryProvider);
+    final writes = <Future<void>>[
+      if (groupOrders.isNotEmpty) repo.updateGroupSortOrders(groupOrders),
+    ];
+
+    final activeProfileId = ref.read(activeProfileIdProvider);
+    var touchedProfiles = false;
+    if (newGeneralOrder != null) {
+      if (activeProfileId == null) {
+        writes.add(ref
+            .read(keystoreServiceProvider)
+            .storeAllViewGeneralSortOrder(newGeneralOrder));
+      } else {
+        writes.add(repo.updateGeneralSortOrder(activeProfileId, newGeneralOrder));
+        touchedProfiles = true;
+      }
+    }
+
+    await Future.wait(writes);
+
+    if (newGeneralOrder != null && activeProfileId == null) {
+      ref.read(allViewGeneralSortOrderProvider.notifier).state =
+          newGeneralOrder;
+    }
+    ref.invalidate(groupsByProfileProvider);
+
+    // Wait for the refetches so provider data matches the override before
+    // dropping it below — clearing it any earlier would show a stale,
+    // pre-drag order for a frame until these land.
+    final _ = await ref.refresh(groupListProvider.future);
+    if (touchedProfiles) {
+      final _ = await ref.refresh(profileListProvider.future);
+    }
+
+    if (mounted) setState(() => _optimisticSectionOrder = null);
+  }
+
+  Widget _buildGroupSection(ThemeData theme, bool isDark, TokenGroup? group,
+      List<Token> tokens, int index) {
     final isGeneral = group == null;
     final name = isGeneral ? 'General' : group.name;
-    final icon = isGeneral ? Icons.apps_rounded : Icons.folder_rounded;
+    final leadingIconColor = isGeneral
+        ? theme.colorScheme.onSurface.withAlpha(140)
+        : theme.colorScheme.primary.withAlpha(180);
+    final leadingIcon = isGeneral
+        ? Icon(Icons.apps_rounded, size: 18, color: leadingIconColor)
+        : groupIcon(group.iconName, size: 18, color: leadingIconColor);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -419,21 +552,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withAlpha(6)
-                : Colors.black.withAlpha(6),
+            color: theme.colorScheme.onSurface.withAlpha(6),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withAlpha(10)
-                  : Colors.black.withAlpha(10),
+              color: theme.colorScheme.onSurface.withAlpha(10),
             ),
           ),
           child: Theme(
             data: theme.copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               key: PageStorageKey('group_${group?.id ?? 'general'}'),
-              initiallyExpanded: true,
+              initiallyExpanded: isGeneral,
               tilePadding: const EdgeInsets.symmetric(horizontal: 16),
               childrenPadding: const EdgeInsets.only(bottom: 8),
               shape: const RoundedRectangleBorder(),
@@ -465,17 +594,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     size: 20,
                     color: theme.colorScheme.onSurface.withAlpha(100),
                   ),
+                  const SizedBox(width: 8),
+                  // Explicit drag handle — buildDefaultDragHandles is off so
+                  // only this triggers a drag, leaving the tile's own
+                  // tap-to-expand gesture untouched.
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: Icon(
+                      Icons.drag_indicator_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurface.withAlpha(100),
+                    ),
+                  ),
                 ],
               ),
               title: Row(
                 children: [
-                  Icon(
-                    icon,
-                    size: 18,
-                    color: isGeneral
-                        ? theme.colorScheme.onSurface.withAlpha(140)
-                        : theme.colorScheme.primary.withAlpha(180),
-                  ),
+                  leadingIcon,
                   const SizedBox(width: 10),
                   Text(
                     name,
@@ -621,9 +756,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ctx, _MoveResult(groupId: '__none__')),
                   ),
                   ...groups.map((g) => ListTile(
-                        leading: Icon(Icons.folder_rounded,
-                            size: 20,
-                            color: theme.colorScheme.primary),
+                        leading: groupIcon(g.iconName,
+                            size: 20, color: theme.colorScheme.primary),
                         title: Text(g.name),
                         dense: true,
                         selected: token.groupId == g.id,
@@ -684,8 +818,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 scale: value,
                 child: child,
               ),
-              child: SvgPicture.asset(
-                'assets/logo/citadel_logo.svg',
+              child: Image.asset(
+                'assets/logo/citadel-logo.png',
                 width: 96,
                 height: 96,
               ),
@@ -718,4 +852,16 @@ class _MoveResult {
   final String? profileId;
   final String? groupId;
   _MoveResult({this.profileId, this.groupId});
+}
+
+/// One collapsible section on the Home screen: either the synthetic
+/// "General" bucket (group == null) or a real TokenGroup.
+class _SectionData {
+  final TokenGroup? group;
+  final List<Token> tokens;
+  const _SectionData({required this.group, required this.tokens});
+
+  bool get isGeneral => group == null;
+  /// Stable identity for Keys/maps — independent of position.
+  String get sectionId => group?.id ?? '__general__';
 }

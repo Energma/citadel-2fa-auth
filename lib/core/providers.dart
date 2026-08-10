@@ -6,9 +6,9 @@ import '../data/repositories/token_repository.dart';
 import '../data/repositories/profile_repository.dart';
 import '../platform/biometric_service.dart';
 import '../platform/keystore_service.dart';
-import '../ui/theme/palette.dart';
 import 'models/token.dart';
 import 'models/profile.dart';
+import 'models/theme_settings.dart';
 
 // --- Singletons ---
 
@@ -146,8 +146,17 @@ final appVersionProvider = FutureProvider<String>((ref) async {
 
 // --- Biometric ---
 
+// Derived from the unlock method rather than the legacy standalone flag, so
+// this reflects true biometric unlock only — never the device-credential
+// case, which has its own provider below.
 final biometricEnabledProvider = FutureProvider<bool>((ref) async {
-  return ref.read(keystoreServiceProvider).isBiometricEnabled();
+  final method = await ref.read(keystoreServiceProvider).getUnlockMethod();
+  return method == 'biometric';
+});
+
+final deviceCredentialEnabledProvider = FutureProvider<bool>((ref) async {
+  final method = await ref.read(keystoreServiceProvider).getUnlockMethod();
+  return method == 'deviceCredential';
 });
 
 // --- PIN ---
@@ -160,11 +169,18 @@ final pinEnabledProvider = FutureProvider<bool>((ref) async {
 
 final autoLockDurationProvider = StateProvider<Duration>((ref) => const Duration(minutes: 5));
 
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
+final citadelThemeModeProvider =
+    StateProvider<CitadelThemeMode>((ref) => CitadelThemeMode.system);
 
-/// Personal Theme accent. Drives buttons, chips and highlights; surfaces keep
-/// the house palette. Defaults to the brand color until the user picks one.
-final accentColorProvider = StateProvider<Color>((ref) => Palette.primary);
+/// Colors backing [CitadelThemeMode.custom]. Ignored in every other mode.
+final customThemeColorsProvider =
+    StateProvider<CustomThemeColors>((ref) => CustomThemeColors.defaults);
+
+/// Position of the synthetic "General" section on the Home screen's "All"
+/// tab, where it pools ungrouped tokens across every profile and so can't be
+/// stored on a single profile row like [Profile.generalSortOrder]. Device-
+/// level UI preference, not vault content.
+final allViewGeneralSortOrderProvider = StateProvider<int>((ref) => -1);
 
 /// Load persisted settings from keystore on app start.
 Future<void> loadPersistedSettings(ProviderContainer container) async {
@@ -174,14 +190,26 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
   container.read(autoLockDurationProvider.notifier).state = Duration(minutes: minutes);
 
   final themeStr = await keystore.getThemeMode();
-  container.read(themeModeProvider.notifier).state = switch (themeStr) {
-    'light' => ThemeMode.light,
-    'dark' => ThemeMode.dark,
-    _ => ThemeMode.system,
+  container.read(citadelThemeModeProvider.notifier).state = switch (themeStr) {
+    'light' => CitadelThemeMode.light,
+    'dark' => CitadelThemeMode.dark,
+    'custom' => CitadelThemeMode.custom,
+    _ => CitadelThemeMode.system,
   };
 
-  final accent = await keystore.getAccentColor();
-  if (accent != null) {
-    container.read(accentColorProvider.notifier).state = Color(accent);
+  final background = await keystore.getCustomBackgroundColor();
+  final text = await keystore.getCustomTextColor();
+  final element = await keystore.getCustomElementColor();
+  if (background != null || text != null || element != null) {
+    final defaults = CustomThemeColors.defaults;
+    container.read(customThemeColorsProvider.notifier).state = CustomThemeColors(
+      background: background != null ? Color(background) : defaults.background,
+      text: text != null ? Color(text) : defaults.text,
+      element: element != null ? Color(element) : defaults.element,
+    );
   }
+
+  final allViewGeneralOrder = await keystore.getAllViewGeneralSortOrder();
+  container.read(allViewGeneralSortOrderProvider.notifier).state =
+      allViewGeneralOrder;
 }

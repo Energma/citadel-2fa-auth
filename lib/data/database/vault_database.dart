@@ -6,7 +6,7 @@ import '../../core/models/profile.dart';
 
 class VaultDatabase {
   static const String _dbName = 'citadel_vault.db';
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 5;
 
   Database? _database;
 
@@ -26,6 +26,13 @@ class VaultDatabase {
       path,
       password: passphrase,
       version: _dbVersion,
+      // SQLite never enforces FOREIGN KEY constraints unless this is set on
+      // the connection — without it, the declared `ON DELETE CASCADE` /
+      // `ON DELETE SET NULL` rules below are inert, and deleting a profile
+      // only removes that one row, leaving its groups and tokens dangling.
+      // Must run in onConfigure: it runs before onCreate/onUpgrade and
+      // outside their transaction, which PRAGMA foreign_keys requires.
+      onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -41,6 +48,28 @@ class VaultDatabase {
   Future<bool> exists() async {
     final path = await _dbPath;
     return databaseExists(path);
+  }
+
+  /// Checks whether [passphrase] decrypts the vault, without disturbing the
+  /// already-open connection (used to re-confirm a PIN when its digits
+  /// aren't stored anywhere, e.g. before turning on biometric unlock later).
+  /// `singleInstance: false` is required here — otherwise the plugin would
+  /// just hand back the already-open connection for this path and skip
+  /// checking the candidate passphrase entirely.
+  Future<bool> verifyPassphrase(String passphrase) async {
+    final path = await _dbPath;
+    try {
+      final probe = await openDatabase(
+        path,
+        password: passphrase,
+        readOnly: true,
+        singleInstance: false,
+      );
+      await probe.close();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Delete the vault (destructive).
@@ -63,6 +92,7 @@ class VaultDatabase {
         colorValue INTEGER NOT NULL,
         iconName TEXT,
         sortOrder INTEGER NOT NULL DEFAULT 0,
+        generalSortOrder INTEGER NOT NULL DEFAULT -1,
         createdAt TEXT NOT NULL
       )
     ''');
@@ -73,6 +103,7 @@ class VaultDatabase {
         profileId TEXT NOT NULL,
         name TEXT NOT NULL,
         sortOrder INTEGER NOT NULL DEFAULT 0,
+        iconName TEXT,
         FOREIGN KEY (profileId) REFERENCES profiles(id) ON DELETE CASCADE
       )
     ''');
@@ -155,6 +186,17 @@ class VaultDatabase {
       }
       await db.execute('DROP TABLE groups');
       await db.execute('ALTER TABLE groups_new RENAME TO groups');
+    }
+
+    if (oldVersion < 4) {
+      // Add General section's per-profile position for Home-screen reorder.
+      await db.execute(
+          'ALTER TABLE profiles ADD COLUMN generalSortOrder INTEGER NOT NULL DEFAULT -1');
+    }
+
+    if (oldVersion < 5) {
+      // Add the user-picked emoji icon for groups.
+      await db.execute('ALTER TABLE groups ADD COLUMN iconName TEXT');
     }
   }
 
@@ -298,6 +340,13 @@ class VaultDatabase {
           where: 'id = ?', whereArgs: [entry.key]);
     }
     await batch.commit(noResult: true);
+  }
+
+  /// Update where the synthetic "General" section sits among [profileId]'s
+  /// groups on the Home screen.
+  Future<void> updateGeneralSortOrder(String profileId, int order) async {
+    await _db.update('profiles', {'generalSortOrder': order},
+        where: 'id = ?', whereArgs: [profileId]);
   }
 
   /// Update a token's profile assignment.

@@ -21,6 +21,16 @@ class BiometricService {
     }
   }
 
+  /// True only when there's real fingerprint/face hardware with something
+  /// enrolled — unlike [isAvailable], a plain PIN/pattern/password screen
+  /// lock with no biometric sensor does NOT count. Use this to gate anything
+  /// that claims to be a biometric scan; use [isAvailable] for "any device
+  /// credential will do" (the phone's screen lock as a whole).
+  Future<bool> hasBiometricHardware() async {
+    final available = await getAvailableBiometrics();
+    return available.isNotEmpty;
+  }
+
   Future<bool> authenticate({String reason = 'Unlock Citadel Auth'}) async {
     try {
       return await _localAuth.authenticate(

@@ -63,3 +63,74 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
     );
   }
 }
+
+/// Confirms the vault's existing PIN via [verify], without changing it. The
+/// PIN itself is never stored (see [KeystoreService.setPinEnabled]), so this
+/// is how a later flow — like re-enabling biometric unlock from Settings —
+/// gets it back to rebuild the encryption passphrase. Returns the PIN via
+/// Navigator.pop on success, or null if cancelled.
+class PinConfirmScreen extends StatefulWidget {
+  final Future<bool> Function(String pin) verify;
+  final String title;
+  final String subtitle;
+
+  const PinConfirmScreen({
+    super.key,
+    required this.verify,
+    this.title = 'Confirm PIN',
+    this.subtitle = 'Enter your current app PIN to continue.',
+  });
+
+  @override
+  State<PinConfirmScreen> createState() => _PinConfirmScreenState();
+}
+
+class _PinConfirmScreenState extends State<PinConfirmScreen> {
+  String? _error;
+  bool _checking = false;
+
+  Future<void> _onPinEntered(String pin) async {
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
+
+    final correct = await widget.verify(pin);
+    if (!mounted) return;
+
+    if (correct) {
+      Navigator.pop(context, pin);
+    } else {
+      setState(() {
+        _checking = false;
+        _error = 'Incorrect PIN';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: _checking ? null : () => Navigator.pop(context, null),
+        ),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: _checking
+              ? const CircularProgressIndicator()
+              : PinInput(
+                  onCompleted: _onPinEntered,
+                  error: _error,
+                  title: widget.title,
+                  subtitle: widget.subtitle,
+                  submitLabel: 'Confirm',
+                ),
+        ),
+      ),
+    );
+  }
+}

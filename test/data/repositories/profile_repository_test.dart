@@ -11,6 +11,7 @@ class _FakeVaultDatabase extends VaultDatabase {
   final List<TokenGroup> groups = [];
   Map<String, int>? lastProfileSortOrders;
   Map<String, int>? lastGroupSortOrders;
+  (String, int)? lastGeneralSortOrder;
 
   @override
   Future<List<Profile>> getAllProfiles() async => List.of(profiles);
@@ -31,6 +32,10 @@ class _FakeVaultDatabase extends VaultDatabase {
   @override
   Future<void> updateProfileSortOrders(Map<String, int> idToOrder) async =>
       lastProfileSortOrders = idToOrder;
+
+  @override
+  Future<void> updateGeneralSortOrder(String profileId, int order) async =>
+      lastGeneralSortOrder = (profileId, order);
 
   @override
   Future<List<TokenGroup>> getAllGroups() async => List.of(groups);
@@ -82,6 +87,11 @@ void main() {
     test('updateSortOrders forwards the map', () async {
       await repo.updateSortOrders({'p1': 0, 'p2': 1});
       expect(db.lastProfileSortOrders, {'p1': 0, 'p2': 1});
+    });
+
+    test('updateGeneralSortOrder forwards profileId and order', () async {
+      await repo.updateGeneralSortOrder('p1', 2);
+      expect(db.lastGeneralSortOrder, ('p1', 2));
     });
   });
 

@@ -1,8 +1,10 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/crypto/otp_engine.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
+import '../widgets/group_icon.dart';
 import '../widgets/qr_scanner.dart';
 
 class AddTokenScreen extends ConsumerStatefulWidget {
@@ -257,10 +259,13 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
   Widget _buildManualForm(ThemeData theme) {
     final profiles = ref.watch(profileListProvider);
     final groups = ref.watch(groupListProvider);
-    final isDark = theme.brightness == Brightness.dark;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      // Bottom padding leaves room for the system nav bar so the CTA button
+      // at the end of the form isn't hidden behind it once Advanced options
+      // push the content past the viewport height.
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -379,63 +384,144 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
 
           // Profile selector
           profiles.when(
-            data: (profileList) => DropdownButtonFormField<String?>(
-              value: _profileId,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Profile'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('None')),
-                ...profileList.map((p) => DropdownMenuItem(
-                      value: p.id,
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                              backgroundColor: p.color, radius: 6),
-                          const SizedBox(width: 8),
-                          Expanded(
-                              child: Text(p.name,
-                                  overflow: TextOverflow.ellipsis)),
-                        ],
+            data: (profileList) {
+              final selected =
+                  profileList.where((p) => p.id == _profileId).firstOrNull;
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _showOptionPicker<String?>(
+                  title: 'Profile',
+                  options: [null, ...profileList.map((p) => p.id)],
+                  current: _profileId,
+                  labelOf: (id) => id == null
+                      ? 'None'
+                      : profileList.firstWhere((p) => p.id == id).name,
+                  leadingOf: (id) => id == null
+                      ? null
+                      : CircleAvatar(
+                          backgroundColor:
+                              profileList.firstWhere((p) => p.id == id).color,
+                          radius: 6),
+                  onSelected: (v) => setState(() => _profileId = v),
+                ),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Profile',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(80),
                       ),
-                    )),
-              ],
-              onChanged: (v) => setState(() => _profileId = v),
-            ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(60),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.auto,
+                  ),
+                  child: Row(
+                    children: [
+                      if (selected != null) ...[
+                        CircleAvatar(
+                            backgroundColor: selected.color, radius: 6),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(selected?.name ?? 'None',
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      Icon(Icons.arrow_drop_down_rounded,
+                          color: theme.colorScheme.onSurface.withAlpha(140)),
+                    ],
+                  ),
+                ),
+              );
+            },
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),
 
           const SizedBox(height: 12),
 
-          // Group selector
-          groups.when(
-            data: (groupList) => groupList.isEmpty
-                ? const SizedBox.shrink()
-                : DropdownButtonFormField<String?>(
-                    value: _groupId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Group'),
-                    items: [
-                      const DropdownMenuItem(
-                          value: null, child: Text('None')),
-                      ...groupList.map((g) => DropdownMenuItem(
-                            value: g.id,
-                            child: Row(
-                              children: [
-                                Icon(Icons.folder_rounded,
-                                    size: 16,
-                                    color: theme.colorScheme.primary),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                    child: Text(g.name,
-                                        overflow:
-                                            TextOverflow.ellipsis)),
-                              ],
-                            ),
-                          )),
-                    ],
-                    onChanged: (v) => setState(() => _groupId = v),
+          // Group selector — scoped to the selected profile so profiles with
+          // same-named groups don't show each other's groups mixed together.
+          // groupListProvider follows the Home screen's active tab, not this
+          // form's own Profile field, so it can't be reused here directly.
+          (_profileId == null
+                  ? groups
+                  : ref.watch(groupsByProfileProvider(_profileId!)))
+              .when(
+            data: (groupList) {
+              if (groupList.isEmpty) return const SizedBox.shrink();
+              final selected =
+                  groupList.where((g) => g.id == _groupId).firstOrNull;
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _showOptionPicker<String?>(
+                  title: 'Group',
+                  options: [null, ...groupList.map((g) => g.id)],
+                  current: _groupId,
+                  labelOf: (id) => id == null
+                      ? 'None'
+                      : groupList.firstWhere((g) => g.id == id).name,
+                  leadingOf: (id) => id == null
+                      ? null
+                      : groupIcon(
+                          groupList.firstWhere((g) => g.id == id).iconName,
+                          color: theme.colorScheme.primary),
+                  onSelected: (v) => setState(() => _groupId = v),
+                ),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Group',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(80),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withAlpha(60),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                    ),
+                    floatingLabelBehavior: FloatingLabelBehavior.auto,
                   ),
+                  child: Row(
+                    children: [
+                      if (selected != null) ...[
+                        groupIcon(selected.iconName,
+                            size: 16, color: theme.colorScheme.primary),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(selected?.name ?? 'None',
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      Icon(Icons.arrow_drop_down_rounded,
+                          color: theme.colorScheme.onSurface.withAlpha(140)),
+                    ],
+                  ),
+                ),
+              );
+            },
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),
@@ -445,9 +531,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
           // Advanced settings
           Container(
             decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withAlpha(6)
-                  : Colors.black.withAlpha(6),
+              color: theme.colorScheme.onSurface.withAlpha(6),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Theme(
@@ -553,6 +637,32 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                               ),
                     ),
                   ),
+                  // Changing Type/Algorithm here only changes what this app
+                  // expects — it can't reconfigure the issuing service, so a
+                  // mismatch here means generated codes will never validate.
+                  if (_type != OtpType.totp || _algorithm != Algorithm.sha1) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 16,
+                            color: theme.colorScheme.onSurface.withAlpha(140)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Type and Algorithm must exactly match what your '
+                            'provider issued — most services use TOTP + SHA1. '
+                            "Changing these here won't reconfigure the provider.",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withAlpha(140),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -601,14 +711,10 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withAlpha(8)
-              : Colors.black.withAlpha(8),
+          color: theme.colorScheme.onSurface.withAlpha(8),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDark
-                ? Colors.white.withAlpha(12)
-                : Colors.black.withAlpha(8),
+            color: theme.colorScheme.onSurface.withAlpha(isDark ? 12 : 8),
           ),
         ),
         child: Row(
@@ -658,6 +764,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
     required T current,
     required String Function(T) labelOf,
     required void Function(T) onSelected,
+    Widget? Function(T)? leadingOf,
   }) {
     showModalBottomSheet(
       context: context,
@@ -691,6 +798,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                 ),
                 const SizedBox(height: 8),
                 ...options.map((opt) => ListTile(
+                      leading: leadingOf?.call(opt),
                       title: Text(labelOf(opt)),
                       trailing: opt == current
                           ? Icon(Icons.check_rounded,

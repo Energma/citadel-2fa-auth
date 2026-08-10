@@ -16,6 +16,9 @@ import 'package:citadel_auth/ui/widgets/pin_input.dart';
 class _FakeKeystoreService extends KeystoreService {
   bool pinEnabled = false;
   bool biometricEnabled = false;
+  // When unset, mirrors the real migration inference in KeystoreService so
+  // existing pinEnabled/biometricEnabled-only setups keep behaving the same.
+  String? unlockMethod;
   Uint8List? vaultKey;
   String? masterPassword;
   int pinAttempts = 0;
@@ -27,6 +30,15 @@ class _FakeKeystoreService extends KeystoreService {
 
   @override
   Future<bool> isBiometricEnabled() async => biometricEnabled;
+
+  @override
+  Future<String> getUnlockMethod() async {
+    if (unlockMethod != null) return unlockMethod!;
+    if (pinEnabled && biometricEnabled) return 'biometric';
+    if (pinEnabled) return 'pin';
+    if (biometricEnabled) return 'deviceCredential';
+    return 'password';
+  }
 
   @override
   Future<Uint8List?> getVaultKey() async => vaultKey;
@@ -64,6 +76,9 @@ class _FakeBiometricService extends BiometricService {
 
   @override
   Future<bool> isAvailable() async => available;
+
+  @override
+  Future<bool> hasBiometricHardware() async => available;
 
   @override
   Future<bool> authenticate({String reason = 'Unlock Citadel Auth'}) async {
@@ -143,8 +158,12 @@ void main() {
   });
 
   testWidgets(
-      'biometric enabled and available without PIN shows biometric view, '
-      'fallback link goes to password', (tester) async {
+      'biometric flag enabled without PIN infers device-lock and shows the '
+      'device-credential view, fallback link goes to password', (tester) async {
+    // No PIN + the biometric flag is exactly what a "phone's screen lock"
+    // setup persists (see KeystoreService.getUnlockMethod migration) — it
+    // must NOT render the fingerprint-icon biometric view, since that flow
+    // may end up being a PIN/pattern prompt rather than a sensor scan.
     final keystore = _FakeKeystoreService()..biometricEnabled = true;
     final biometric = _FakeBiometricService()..available = true;
     final vault = _FakeVaultNotifier();
@@ -153,10 +172,10 @@ void main() {
         tester, keystore: keystore, biometric: biometric, vault: vault);
 
     // Auto-prompt fired once on init; the fake cancelled it, leaving the
-    // biometric primary view on screen.
+    // device-credential primary view on screen.
     expect(biometric.authenticateCalls, 1);
-    expect(find.text('Touch the sensor to unlock'), findsOneWidget);
-    expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+    expect(find.text('Confirm using your device screen lock'), findsOneWidget);
+    expect(find.byIcon(Icons.fingerprint), findsNothing);
     expect(find.byType(TextField), findsNothing);
     expect(find.byType(PinInput), findsNothing);
     expect(find.text('Use PIN'), findsNothing);
@@ -166,7 +185,28 @@ void main() {
 
     expect(find.byType(TextField), findsOneWidget);
     // The password form offers a way back to the primary method.
-    expect(find.text('Use biometrics'), findsOneWidget);
+    expect(find.text('Use device screen lock'), findsOneWidget);
+  });
+
+  testWidgets(
+      'unlockMethod=biometric without PIN shows the true biometric view',
+      (tester) async {
+    // A user could in principle end up here (real biometric, no PIN) only
+    // via the explicit unlockMethod flag — the flag combination alone
+    // (biometricEnabled + !pinEnabled) always means device-lock. This test
+    // exercises the biometric view itself using that explicit flag.
+    final keystore = _FakeKeystoreService()
+      ..biometricEnabled = true
+      ..unlockMethod = 'biometric';
+    final biometric = _FakeBiometricService()..available = true;
+    final vault = _FakeVaultNotifier();
+
+    await _pumpLockScreen(
+        tester, keystore: keystore, biometric: biometric, vault: vault);
+
+    expect(biometric.authenticateCalls, 1);
+    expect(find.text('Touch the sensor to unlock'), findsOneWidget);
+    expect(find.byIcon(Icons.fingerprint), findsOneWidget);
   });
 
   testWidgets('biometric and PIN both enabled: biometric primary, fallback to PIN',
@@ -197,7 +237,12 @@ void main() {
 
   testWidgets('biometric enabled but unavailable falls back at init',
       (tester) async {
-    final keystore = _FakeKeystoreService()..biometricEnabled = true;
+    // unlockMethod explicitly 'biometric' (true fingerprint/face, as opposed
+    // to 'deviceCredential' which is trusted unconditionally — see the next
+    // test) with no real biometric hardware on the device.
+    final keystore = _FakeKeystoreService()
+      ..biometricEnabled = true
+      ..unlockMethod = 'biometric';
     final biometric = _FakeBiometricService(); // available = false
     final vault = _FakeVaultNotifier();
 
@@ -207,6 +252,97 @@ void main() {
     expect(biometric.authenticateCalls, 0);
     expect(find.text('Touch the sensor to unlock'), findsNothing);
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets(
+      'PIN+biometric account with no real biometric hardware goes straight '
+      'to the PIN view instead of flashing the fingerprint view',
+      (tester) async {
+    // The bug: isAvailable() (used for both "biometric" and "device
+    // credential") is satisfied by a bare PIN/pattern screen lock with no
+    // biometric sensor at all, so an account could end up with
+    // unlockMethod == 'biometric' and still show/auto-trigger the true
+    // fingerprint view on a phone that has no fingerprint sensor.
+    final keystore = _FakeKeystoreService()
+      ..pinEnabled = true
+      ..biometricEnabled = true
+      ..unlockMethod = 'biometric'
+      ..masterPassword = 'master-pw';
+    final biometric = _FakeBiometricService(); // available = false
+    final vault = _FakeVaultNotifier();
+
+    await _pumpLockScreen(
+        tester, keystore: keystore, biometric: biometric, vault: vault);
+
+    expect(biometric.authenticateCalls, 0);
+    expect(find.text('Touch the sensor to unlock'), findsNothing);
+    expect(find.byIcon(Icons.fingerprint), findsNothing);
+    expect(find.byType(PinInput), findsOneWidget);
+  });
+
+  testWidgets(
+      'device-credential accounts always get the screen-lock view and an '
+      'auto-prompt, even when a live availability check would say no',
+      (tester) async {
+    // The bug: a device-lock account (no app PIN, "use my phone's screen
+    // lock") used to re-check availability at unlock time and, if that came
+    // back false for any reason, silently dropped the user straight onto the
+    // bare master-password view with no way back to the screen-lock option
+    // at all. Device credential just needs *some* secure lock screen — the
+    // same check setup already passed — so it's trusted here instead.
+    final keystore = _FakeKeystoreService()
+      ..biometricEnabled = true
+      ..unlockMethod = 'deviceCredential';
+    final biometric = _FakeBiometricService(); // available = false
+    final vault = _FakeVaultNotifier();
+
+    await _pumpLockScreen(
+        tester, keystore: keystore, biometric: biometric, vault: vault);
+
+    // Still auto-prompts via the OS (which may itself fall back to a PIN/
+    // pattern entry) rather than skipping straight to the password form.
+    expect(biometric.authenticateCalls, 1);
+    expect(find.text('Confirm using your device screen lock'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+
+    // And the password fallback is still one tap away from there.
+    await tester.tap(find.text('Use master password'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Use device screen lock'), findsOneWidget);
+  });
+
+  testWidgets(
+      'password-primary account with a leftover vault key still offers '
+      'device screen lock as a fallback, and it actually unlocks',
+      (tester) async {
+    // The bug: turning off "Biometric Unlock" in Settings for a no-PIN
+    // account sets unlockMethod to 'password' but does NOT clear the stored
+    // vault key — the device's screen lock still works to unlock this vault.
+    // Losing the fallback link here stranded the user on password-only with
+    // no way back to it.
+    final keystore = _FakeKeystoreService()
+      ..unlockMethod = 'password'
+      ..vaultKey = Uint8List.fromList(utf8.encode('master-pw'));
+    final biometric = _FakeBiometricService()
+      ..available = true
+      ..authenticateResult = true;
+    final vault = _FakeVaultNotifier()..unlockResult = true;
+
+    await _pumpLockScreen(
+        tester, keystore: keystore, biometric: biometric, vault: vault);
+
+    // Password is primary, so no auto-prompt on init...
+    expect(biometric.authenticateCalls, 0);
+    expect(find.byType(TextField), findsOneWidget);
+    // ...but the screen-lock option is still offered and works.
+    expect(find.text('Use device screen lock'), findsOneWidget);
+
+    await tester.tap(find.text('Use device screen lock'));
+    await tester.pumpAndSettle();
+
+    expect(biometric.authenticateCalls, 1);
+    expect(vault.unlockCalls, ['master-pw']);
   });
 
   testWidgets('nothing enabled shows master password view', (tester) async {
@@ -271,7 +407,7 @@ void main() {
 
   testWidgets(
       'successful scan with a stale vault key shows an error on the '
-      'biometric view instead of failing silently', (tester) async {
+      'device-credential view instead of failing silently', (tester) async {
     final keystore = _FakeKeystoreService()
       ..biometricEnabled = true
       // Keys are stored as UTF-8 bytes of the passphrase; a non-ASCII
@@ -287,7 +423,7 @@ void main() {
 
     // The stored bytes decode back to the exact passphrase they encoded.
     expect(vault.unlockCalls, ['pässwörd']);
-    expect(find.text('Touch the sensor to unlock'), findsOneWidget);
+    expect(find.text('Confirm using your device screen lock'), findsOneWidget);
     expect(find.textContaining('no longer matches this vault'), findsOneWidget);
     expect(find.text('Use master password'), findsOneWidget);
   });

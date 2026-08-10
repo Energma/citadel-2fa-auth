@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/models/theme_settings.dart';
 import 'palette.dart';
 
 class AppTheme {
@@ -16,53 +17,84 @@ class AppTheme {
     return hsl.withLightness((hsl.lightness - 0.12).clamp(0.0, 1.0)).toColor();
   }
 
-  /// A muted tint of [accent] for tonal surfaces. Overriding [ColorScheme
-  /// .primary] alone leaves the *container* roles at Material's stock defaults,
-  /// so tonal buttons and chips would ignore the accent entirely.
-  static Color _container(Color accent, Brightness brightness) {
-    final hsl = HSLColor.fromColor(accent);
-    return brightness == Brightness.dark
-        ? hsl
-            .withSaturation((hsl.saturation * 0.65).clamp(0.0, 1.0))
-            .withLightness((hsl.lightness * 0.38).clamp(0.0, 1.0))
-            .toColor()
-        : hsl
-            .withSaturation((hsl.saturation * 0.55).clamp(0.0, 1.0))
-            .withLightness((hsl.lightness + 0.34).clamp(0.0, 0.92))
-            .toColor();
+  /// A subtle step from [base] toward [contrast], used for card/input
+  /// surfaces so they stay visibly distinct from the scaffold background
+  /// without giving up the "pure black" / "pure white" / user-chosen look.
+  static Color _tonal(Color base, Color contrast, [double amount = 0.06]) {
+    return Color.alphaBlend(contrast.withValues(alpha: amount), base);
   }
 
-  static ThemeData darkTheme(Color accent) {
+  static ThemeData darkTheme() => _monoTheme(
+        brightness: Brightness.dark,
+        background: Colors.black,
+        onBackground: Colors.white,
+      );
+
+  static ThemeData lightTheme() => _monoTheme(
+        brightness: Brightness.light,
+        background: Colors.white,
+        onBackground: Colors.black,
+      );
+
+  /// Fully user-driven theme: [colors.background] behind everything,
+  /// [colors.text] for text/onSurface roles, [colors.element] for buttons,
+  /// icons and highlights — the same three roles [_monoTheme] fixes to
+  /// black/white for the Dark/Light presets.
+  static ThemeData customTheme(CustomThemeColors colors) => _monoTheme(
+        brightness: ThemeData.estimateBrightnessForColor(colors.background),
+        background: colors.background,
+        onBackground: colors.text,
+        element: colors.element,
+      );
+
+  /// Shared builder behind [darkTheme], [lightTheme] and [customTheme]: a
+  /// [background] surface, [onBackground] for text/icons, and an optional
+  /// [element] accent (defaults to [onBackground] itself, so Dark/Light stay
+  /// strictly monochrome — white-on-black / black-on-white).
+  static ThemeData _monoTheme({
+    required Brightness brightness,
+    required Color background,
+    required Color onBackground,
+    Color? element,
+  }) {
+    final accent = element ?? onBackground;
     final onAccentColor = onAccent(accent);
-    final container = _container(accent, Brightness.dark);
+    final card = _tonal(background, onBackground);
+    final divider = onBackground.withValues(alpha: 0.16);
+
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
-      colorScheme: ColorScheme.dark(
+      brightness: brightness,
+      colorScheme: ColorScheme(
+        brightness: brightness,
         primary: accent,
+        onPrimary: onAccentColor,
         secondary: _deepen(accent),
+        onSecondary: onAccentColor,
         tertiary: Palette.accent,
         error: Palette.error,
-        surface: Palette.darkSurface,
-        onPrimary: onAccentColor,
-        primaryContainer: container,
-        onPrimaryContainer: onAccent(container),
-        secondaryContainer: container,
-        onSecondaryContainer: onAccent(container),
+        onError: Colors.white,
+        surface: background,
+        onSurface: onBackground,
+        primaryContainer: card,
+        onPrimaryContainer: onBackground,
+        secondaryContainer: card,
+        onSecondaryContainer: onBackground,
       ),
-      scaffoldBackgroundColor: Palette.darkBg,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Palette.darkBg,
+      scaffoldBackgroundColor: background,
+      appBarTheme: AppBarTheme(
+        backgroundColor: background,
         elevation: 0,
         centerTitle: false,
+        foregroundColor: onBackground,
         titleTextStyle: TextStyle(
-          color: Colors.white,
+          color: onBackground,
           fontSize: 24,
           fontWeight: FontWeight.bold,
         ),
       ),
       cardTheme: CardThemeData(
-        color: Palette.darkSurface,
+        color: card,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
@@ -72,7 +104,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Palette.darkCard,
+        fillColor: card,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -88,88 +120,16 @@ class AppTheme {
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: Palette.darkCard,
-        selectedColor: accent.withAlpha(50),
+        backgroundColor: card,
+        selectedColor: accent.withValues(alpha: 0.2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: Palette.darkSurface,
+        backgroundColor: card,
         selectedItemColor: accent,
-        unselectedItemColor: Colors.white54,
+        unselectedItemColor: onBackground.withValues(alpha: 0.54),
       ),
-      dividerTheme: const DividerThemeData(color: Color(0xFF2A3F5F)),
-    );
-  }
-
-  static ThemeData lightTheme(Color accent) {
-    final onAccentColor = onAccent(accent);
-    final container = _container(accent, Brightness.light);
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.light,
-      colorScheme: ColorScheme.light(
-        primary: accent,
-        secondary: _deepen(accent),
-        tertiary: Palette.accent,
-        error: Palette.error,
-        surface: Palette.lightSurface,
-        onSurface: const Color(0xFF1E293B),
-        onPrimary: onAccentColor,
-        primaryContainer: container,
-        onPrimaryContainer: onAccent(container),
-        secondaryContainer: container,
-        onSecondaryContainer: onAccent(container),
-      ),
-      scaffoldBackgroundColor: Palette.lightBg,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Palette.lightBg,
-        elevation: 0,
-        centerTitle: false,
-        foregroundColor: Color(0xFF1E293B),
-        titleTextStyle: TextStyle(
-          color: Color(0xFF1E293B),
-          fontSize: 24,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      cardTheme: CardThemeData(
-        color: Palette.lightSurface,
-        elevation: 1,
-        shadowColor: Colors.black12,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: accent,
-        foregroundColor: onAccentColor,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: Palette.lightCard,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: accent,
-          foregroundColor: onAccentColor,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-      chipTheme: ChipThemeData(
-        backgroundColor: Palette.lightCard,
-        selectedColor: accent.withAlpha(30),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: Palette.lightSurface,
-        selectedItemColor: accent,
-        unselectedItemColor: const Color(0xFF94A3B8),
-      ),
-      dividerTheme: const DividerThemeData(color: Color(0xFFE2E8F0)),
+      dividerTheme: DividerThemeData(color: divider),
     );
   }
 }
