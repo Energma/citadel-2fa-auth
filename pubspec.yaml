@@ -39,6 +39,7 @@ dependencies:
   # UI
   flutter_svg: ^2.0.17
   flutter_slidable: ^4.0.0
+  flutter_colorpicker: ^1.1.0
   uuid: ^4.5.1
   intl: ^0.20.2
   share_plus: ^10.1.4

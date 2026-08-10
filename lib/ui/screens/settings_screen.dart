@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import '../../core/models/theme_settings.dart';
 import '../../core/providers.dart';
 import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
@@ -20,8 +23,8 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final themeMode = ref.watch(themeModeProvider);
-    final accent = ref.watch(accentColorProvider);
+    final citadelThemeMode = ref.watch(citadelThemeModeProvider);
+    final customColors = ref.watch(customThemeColorsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -29,25 +32,28 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           _sectionHeader(theme, 'Appearance'),
           ListTile(
-            leading: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+            leading: Icon(switch (citadelThemeMode) {
+              CitadelThemeMode.custom => Icons.palette,
+              _ => isDark ? Icons.dark_mode : Icons.light_mode,
+            }),
             title: const Text('Theme'),
-            subtitle: Text(_themeModeLabel(themeMode)),
+            subtitle: Text(_themeModeLabel(citadelThemeMode)),
             onTap: () => _showThemePicker(context, ref),
           ),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Personal Theme'),
-            subtitle: Text(_accentLabel(accent)),
+            subtitle: const Text('Background, text and element colors for Custom theme'),
             trailing: Container(
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                color: accent,
+                color: customColors.element,
                 shape: BoxShape.circle,
                 border: Border.all(color: theme.dividerColor),
               ),
             ),
-            onTap: () => _showAccentPicker(context, ref),
+            onTap: () => _showCustomThemeDialog(context, ref),
           ),
 
           _sectionHeader(theme, 'Security'),
@@ -147,7 +153,7 @@ class SettingsScreen extends ConsumerWidget {
                       'assets/logo/energma_logo.png',
                       width: 20,
                       height: 20,
-                      color: Palette.primary,
+                      color: theme.colorScheme.onSurface,
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -183,37 +189,40 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  String _themeModeLabel(ThemeMode mode) {
+  String _themeModeLabel(CitadelThemeMode mode) {
     return switch (mode) {
-      ThemeMode.system => 'System default',
-      ThemeMode.light => 'Light',
-      ThemeMode.dark => 'Dark',
+      CitadelThemeMode.system => 'System default',
+      CitadelThemeMode.light => 'Light',
+      CitadelThemeMode.dark => 'Dark',
+      CitadelThemeMode.custom => 'Custom',
     };
   }
 
   void _showThemePicker(BuildContext context, WidgetRef ref) {
-    final current = ref.read(themeModeProvider);
+    final current = ref.read(citadelThemeModeProvider);
     showDialog(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Theme'),
         children: [
-          _themeOption(ctx, ref, ThemeMode.system, 'System default', Icons.brightness_auto, current),
-          _themeOption(ctx, ref, ThemeMode.light, 'Light', Icons.light_mode, current),
-          _themeOption(ctx, ref, ThemeMode.dark, 'Dark', Icons.dark_mode, current),
+          _themeOption(ctx, ref, CitadelThemeMode.system, 'System default', Icons.brightness_auto, current),
+          _themeOption(ctx, ref, CitadelThemeMode.light, 'Light', Icons.light_mode, current),
+          _themeOption(ctx, ref, CitadelThemeMode.dark, 'Dark', Icons.dark_mode, current),
+          _themeOption(ctx, ref, CitadelThemeMode.custom, 'Custom', Icons.palette, current),
         ],
       ),
     );
   }
 
-  Widget _themeOption(BuildContext ctx, WidgetRef ref, ThemeMode mode, String label, IconData icon, ThemeMode current) {
+  Widget _themeOption(BuildContext ctx, WidgetRef ref, CitadelThemeMode mode, String label, IconData icon, CitadelThemeMode current) {
     return SimpleDialogOption(
       onPressed: () {
-        ref.read(themeModeProvider.notifier).state = mode;
+        ref.read(citadelThemeModeProvider.notifier).state = mode;
         final modeStr = switch (mode) {
-          ThemeMode.light => 'light',
-          ThemeMode.dark => 'dark',
-          _ => 'system',
+          CitadelThemeMode.light => 'light',
+          CitadelThemeMode.dark => 'dark',
+          CitadelThemeMode.custom => 'custom',
+          CitadelThemeMode.system => 'system',
         };
         ref.read(keystoreServiceProvider).storeThemeMode(modeStr);
         Navigator.pop(ctx);
@@ -229,17 +238,10 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  String _accentLabel(Color accent) {
-    for (final (name, color) in Palette.accentPresets) {
-      if (color.toARGB32() == accent.toARGB32()) return name;
-    }
-    return 'Custom';
-  }
-
-  void _showAccentPicker(BuildContext context, WidgetRef ref) {
+  void _showCustomThemeDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (_) => const _AccentPickerDialog(),
+      builder: (_) => const _CustomThemeDialog(),
     );
   }
 
@@ -652,7 +654,7 @@ class SettingsScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete Everything', style: TextStyle(color: Colors.red)),
+            child: Text('Delete Everything', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
           ),
         ],
       ),
@@ -680,15 +682,15 @@ class SettingsScreen extends ConsumerWidget {
           // Riverpod providers caching them in memory don't know that on
           // their own — without invalidating them here, a vault created
           // right after deletion would keep showing the previous vault's
-          // PIN/biometric/theme/accent/auto-lock state until the app is
+          // PIN/biometric/theme/custom-colors/auto-lock state until the app is
           // killed and restarted. Invalidating a StateProvider re-runs its
           // initial `(ref) => ...` callback, which resets it to the same
           // default it would have on a fresh install.
           ref.invalidate(pinEnabledProvider);
           ref.invalidate(biometricEnabledProvider);
           ref.invalidate(autoLockDurationProvider);
-          ref.invalidate(themeModeProvider);
-          ref.invalidate(accentColorProvider);
+          ref.invalidate(citadelThemeModeProvider);
+          ref.invalidate(customThemeColorsProvider);
           ref.invalidate(allViewGeneralSortOrderProvider);
           deleted = true;
         },
@@ -1008,7 +1010,7 @@ class _PinTileState extends ConsumerState<_PinTile> {
               Navigator.pop(ctx);
               _removePin(context);
             },
-            child: const Text('Remove PIN', style: TextStyle(color: Colors.red)),
+            child: Text('Remove PIN', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
           ),
         ],
       ),
@@ -1243,71 +1245,132 @@ Future<String?> _promptPassword(BuildContext context, String title) async {
   );
 }
 
-/// Accent picker for the Personal Theme setting. Changes apply live — the whole
-/// app re-themes as you drag — so there is no separate preview to keep in sync.
-class _AccentPickerDialog extends ConsumerStatefulWidget {
-  const _AccentPickerDialog();
+/// Color picker for the Custom theme's background/text/element colors.
+/// Changes apply live and switch Theme to Custom immediately — the whole app
+/// re-themes as you drag — so there is no separate preview to keep in sync.
+class _CustomThemeDialog extends ConsumerStatefulWidget {
+  const _CustomThemeDialog();
 
   @override
-  ConsumerState<_AccentPickerDialog> createState() =>
-      _AccentPickerDialogState();
+  ConsumerState<_CustomThemeDialog> createState() =>
+      _CustomThemeDialogState();
 }
 
-class _AccentPickerDialogState extends ConsumerState<_AccentPickerDialog> {
-  void _apply(Color color) {
-    ref.read(accentColorProvider.notifier).state = color;
-    ref.read(keystoreServiceProvider).storeAccentColor(color.toARGB32());
+class _CustomThemeDialogState extends ConsumerState<_CustomThemeDialog> {
+  // A hue slider alone can't reach black/white/gray (it always keeps fixed
+  // saturation/lightness), so Background/Text get grayscale presets instead
+  // of the brand hues in [Palette.accentPresets].
+  static const List<(String, Color)> _grayscalePresets = [
+    ('Black', Colors.black),
+    ('White', Colors.white),
+    ('Slate', Color(0xFF64748B)),
+  ];
+
+  /// Applies [colors], unless it would make background and text identical
+  /// (making text invisible) — that update is silently dropped instead.
+  void _apply(CustomThemeColors colors) {
+    if (colors.background.toARGB32() == colors.text.toARGB32()) return;
+    ref.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.custom;
+    ref.read(customThemeColorsProvider.notifier).state = colors;
+    final keystore = ref.read(keystoreServiceProvider);
+    keystore.storeThemeMode('custom');
+    keystore.storeCustomBackgroundColor(colors.background.toARGB32());
+    keystore.storeCustomTextColor(colors.text.toARGB32());
+    keystore.storeCustomElementColor(colors.element.toARGB32());
   }
 
   void _reset() {
-    ref.read(accentColorProvider.notifier).state = Palette.primary;
-    ref.read(keystoreServiceProvider).clearAccentColor();
+    ref.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.system;
+    ref.read(customThemeColorsProvider.notifier).state = CustomThemeColors.defaults;
+    final keystore = ref.read(keystoreServiceProvider);
+    keystore.storeThemeMode('system');
+    keystore.clearCustomBackgroundColor();
+    keystore.clearCustomTextColor();
+    keystore.clearCustomElementColor();
+  }
+
+  Future<void> _openFullPicker(
+    BuildContext context,
+    Color current,
+    ValueChanged<Color> onChanged,
+  ) async {
+    var picked = current;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pick a color'),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: current,
+            onColorChanged: (c) => picked = c,
+            enableAlpha: false,
+            labelTypes: const [ColorLabelType.hex, ColorLabelType.rgb],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              onChanged(picked);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Select'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selected = ref.watch(accentColorProvider);
-    final hue = HSLColor.fromColor(selected).hue;
+    final colors = ref.watch(customThemeColorsProvider);
+    // The dialog's own active theme (not the device's raw OS brightness) —
+    // matters when Theme is explicitly Light/Dark rather than System, where
+    // the two can disagree.
+    final isDarkTheme = theme.brightness == Brightness.dark;
 
     return AlertDialog(
       title: const Text('Personal Theme'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Accent color', style: theme.textTheme.labelMedium),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final (name, color) in Palette.accentPresets)
-                _swatch(color, name, selected),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Text('Custom hue', style: theme.textTheme.labelMedium),
-          Slider(
-            value: hue,
-            max: 360,
-            onChanged: (h) =>
-                _apply(HSLColor.fromAHSL(1, h, 0.72, 0.52).toColor()),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              FilledButton.tonalIcon(
-                onPressed: () {},
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Token'),
-                style: FilledButton.styleFrom(shape: const StadiumBorder()),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton(onPressed: () {}, child: const Text('Preview')),
-            ],
-          ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Changing a color switches Theme to Custom.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+            ),
+            const SizedBox(height: 16),
+            _colorRow(
+              label: 'Background',
+              selected: colors.background,
+              presets: _grayscalePresets,
+              onChanged: (c) => _apply(colors.copyWith(background: c)),
+              blockedColor: colors.text,
+              revertColor: isDarkTheme ? Colors.black : Colors.white,
+              fixedSliderColor: isDarkTheme ? Colors.white : Colors.black,
+            ),
+            const SizedBox(height: 20),
+            _colorRow(
+              label: 'Text',
+              selected: colors.text,
+              presets: _grayscalePresets,
+              onChanged: (c) => _apply(colors.copyWith(text: c)),
+              blockedColor: colors.background,
+              revertColor: isDarkTheme ? Colors.white : Colors.black,
+              fixedSliderColor: isDarkTheme ? Colors.white : Colors.black,
+            ),
+            const SizedBox(height: 20),
+            _colorRow(
+              label: 'Element',
+              selected: colors.element,
+              presets: Palette.accentPresets,
+              onChanged: (c) => _apply(colors.copyWith(element: c)),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(onPressed: _reset, child: const Text('Reset')),
@@ -1319,29 +1382,152 @@ class _AccentPickerDialogState extends ConsumerState<_AccentPickerDialog> {
     );
   }
 
-  Widget _swatch(Color color, String name, Color selected) {
-    final isSelected = color.toARGB32() == selected.toARGB32();
-    return Tooltip(
-      message: name,
-      child: InkWell(
-        onTap: () => _apply(color),
-        customBorder: const CircleBorder(),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.onSurface
-                  : Colors.transparent,
-              width: 2.5,
+  Widget _colorRow({
+    required String label,
+    required Color selected,
+    required List<(String, Color)> presets,
+    required ValueChanged<Color> onChanged,
+    // When set, a preset matching this color is disabled — used to stop
+    // Background and Text from ever being set to the same color, which
+    // would make the text invisible.
+    Color? blockedColor,
+    // When set, shows a tappable revert icon next to the slider that jumps
+    // the field straight back to this color — the hue slider itself can't
+    // reach true black/white since it holds saturation/lightness fixed.
+    Color? revertColor,
+    // Background/Text sliders always render in the device theme's own
+    // black/white (not whatever hue they're currently dragged to) — only
+    // the Element slider tracks its own selected color.
+    Color? fixedSliderColor,
+  }) {
+    final theme = Theme.of(context);
+    final hue = HSLColor.fromColor(selected).hue;
+    final isBlocked = blockedColor != null && blockedColor.toARGB32() == selected.toARGB32();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(label, style: theme.textTheme.labelMedium),
+            const Spacer(),
+            InkWell(
+              onTap: () => _openFullPicker(context, selected, onChanged),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: selected,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: theme.dividerColor),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text('More colors'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final (name, color) in presets)
+              _swatch(
+                color,
+                name,
+                selected,
+                onChanged,
+                blocked: blockedColor != null && color.toARGB32() == blockedColor.toARGB32(),
+              ),
+          ],
+        ),
+        if (isBlocked)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              "Can't match the other color — text would be invisible.",
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
             ),
           ),
-          child: isSelected
-              ? Icon(Icons.check, size: 20, color: AppTheme.onAccent(color))
-              : null,
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                value: hue,
+                max: 360,
+                activeColor: fixedSliderColor ?? selected,
+                thumbColor: fixedSliderColor ?? selected,
+                onChanged: (h) => onChanged(HSLColor.fromAHSL(1, h, 0.72, 0.52).toColor()),
+              ),
+            ),
+            if (revertColor != null)
+              Tooltip(
+                message: 'Revert to theme default',
+                child: InkWell(
+                  onTap: () => onChanged(revertColor),
+                  customBorder: const CircleBorder(),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: SvgPicture.asset(
+                      'assets/icons/revert_circle.svg',
+                      width: 24,
+                      height: 24,
+                      // Same color on both rows, matching ordinary text —
+                      // not the (opposite-of-each-other) value each icon
+                      // reverts to. Uses the dialog's own onSurface (not a
+                      // device-brightness guess) so it's correct even when
+                      // Theme is explicitly Dark/Light rather than System.
+                      colorFilter: ColorFilter.mode(
+                        theme.colorScheme.onSurface,
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _swatch(
+    Color color,
+    String name,
+    Color selected,
+    ValueChanged<Color> onChanged, {
+    bool blocked = false,
+  }) {
+    final isSelected = color.toARGB32() == selected.toARGB32();
+    return Tooltip(
+      message: blocked ? "$name — matches the other color" : name,
+      child: InkWell(
+        onTap: blocked ? null : () => onChanged(color),
+        customBorder: const CircleBorder(),
+        child: Opacity(
+          opacity: blocked ? 0.3 : 1,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.onSurface
+                    : Theme.of(context).dividerColor,
+                width: isSelected ? 2.5 : 1,
+              ),
+            ),
+            child: isSelected
+                ? Icon(Icons.check, size: 16, color: AppTheme.onAccent(color))
+                : null,
+          ),
         ),
       ),
     );

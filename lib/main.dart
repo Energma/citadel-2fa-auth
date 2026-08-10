@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'core/config/app_config.dart';
+import 'core/models/theme_settings.dart';
 import 'core/providers.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
@@ -47,14 +48,35 @@ class _CitadelAppState extends ConsumerState<CitadelApp> {
   @override
   Widget build(BuildContext context) {
     final vault = ref.watch(vaultProvider);
-    final themeMode = ref.watch(themeModeProvider);
-    final accent = ref.watch(accentColorProvider);
+    final citadelThemeMode = ref.watch(citadelThemeModeProvider);
+
+    // ThemeMode has no "custom" slot, so a custom theme is pinned in place
+    // by handing it to MaterialApp as both theme and darkTheme with a fixed
+    // ThemeMode.light — that sidesteps Flutter's light/dark resolution
+    // entirely instead of fighting it.
+    final ThemeData lightTheme;
+    final ThemeData darkTheme;
+    final ThemeMode themeMode;
+    if (citadelThemeMode == CitadelThemeMode.custom) {
+      final customTheme = AppTheme.customTheme(ref.watch(customThemeColorsProvider));
+      lightTheme = customTheme;
+      darkTheme = customTheme;
+      themeMode = ThemeMode.light;
+    } else {
+      lightTheme = AppTheme.lightTheme();
+      darkTheme = AppTheme.darkTheme();
+      themeMode = switch (citadelThemeMode) {
+        CitadelThemeMode.light => ThemeMode.light,
+        CitadelThemeMode.dark => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
+    }
 
     return MaterialApp(
       title: 'Citadel Auth',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(accent),
-      darkTheme: AppTheme.darkTheme(accent),
+      theme: lightTheme,
+      darkTheme: darkTheme,
       themeMode: themeMode,
       home: !_splashDone
           ? SplashScreen(onComplete: () => setState(() => _splashDone = true))

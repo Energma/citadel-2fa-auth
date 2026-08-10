@@ -15,7 +15,9 @@ class KeystoreService {
   static const _biometricEnabledKey = 'citadel_biometric_enabled';
   static const _autoLockMinutesKey = 'citadel_auto_lock_minutes';
   static const _themeModeKey = 'citadel_theme_mode';
-  static const _accentColorKey = 'citadel_accent_color';
+  static const _customElementColorKey = 'citadel_accent_color';
+  static const _customBackgroundColorKey = 'citadel_custom_bg_color';
+  static const _customTextColorKey = 'citadel_custom_text_color';
   static const _allViewGeneralSortOrderKey = 'citadel_all_view_general_sort_order';
   static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
@@ -170,20 +172,53 @@ class KeystoreService {
     return await _storage.read(key: _themeModeKey) ?? 'system';
   }
 
-  /// Store the Personal Theme accent color as a packed ARGB int.
-  Future<void> storeAccentColor(int argb) async {
-    await _storage.write(key: _accentColorKey, value: argb.toString());
+  /// Store the Custom theme's element (button/icon/highlight) color as a
+  /// packed ARGB int.
+  Future<void> storeCustomElementColor(int argb) async {
+    await _storage.write(key: _customElementColorKey, value: argb.toString());
   }
 
-  /// Get the stored accent, or null when the user hasn't chosen one.
-  Future<int?> getAccentColor() async {
-    final value = await _storage.read(key: _accentColorKey);
+  /// Get the stored element color, or null when the user hasn't chosen one.
+  Future<int?> getCustomElementColor() async {
+    final value = await _storage.read(key: _customElementColorKey);
     return value == null ? null : int.tryParse(value);
   }
 
-  /// Drop the custom accent and fall back to the house color.
-  Future<void> clearAccentColor() async {
-    await _storage.delete(key: _accentColorKey);
+  /// Drop the custom element color and fall back to the default.
+  Future<void> clearCustomElementColor() async {
+    await _storage.delete(key: _customElementColorKey);
+  }
+
+  /// Store the Custom theme's background color as a packed ARGB int.
+  Future<void> storeCustomBackgroundColor(int argb) async {
+    await _storage.write(key: _customBackgroundColorKey, value: argb.toString());
+  }
+
+  /// Get the stored background color, or null when the user hasn't chosen one.
+  Future<int?> getCustomBackgroundColor() async {
+    final value = await _storage.read(key: _customBackgroundColorKey);
+    return value == null ? null : int.tryParse(value);
+  }
+
+  /// Drop the custom background color and fall back to the default.
+  Future<void> clearCustomBackgroundColor() async {
+    await _storage.delete(key: _customBackgroundColorKey);
+  }
+
+  /// Store the Custom theme's text color as a packed ARGB int.
+  Future<void> storeCustomTextColor(int argb) async {
+    await _storage.write(key: _customTextColorKey, value: argb.toString());
+  }
+
+  /// Get the stored text color, or null when the user hasn't chosen one.
+  Future<int?> getCustomTextColor() async {
+    final value = await _storage.read(key: _customTextColorKey);
+    return value == null ? null : int.tryParse(value);
+  }
+
+  /// Drop the custom text color and fall back to the default.
+  Future<void> clearCustomTextColor() async {
+    await _storage.delete(key: _customTextColorKey);
   }
 
   /// Store General's Home-screen position for the "All" tab, where it pools
