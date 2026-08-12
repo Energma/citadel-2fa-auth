@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import '../../ui/theme/palette.dart';
 
 /// Launch intro, mirroring the Energma desktop splash: the mark lifts in, the
 /// wordmark wipes left→right, a sheen sweeps across it, then the whole thing
 /// fades to reveal the app. Deliberately monochrome — no brand color here.
+///
+/// Colors follow the active theme's surface/onSurface roles rather than a
+/// fixed palette, so it renders dark (white-on-black), light (black-on-white)
+/// or the user's custom background/text pair, matching whatever [AppTheme]
+/// variant [MaterialApp] has already resolved by the time this builds.
 class SplashScreen extends StatefulWidget {
   final VoidCallback onComplete;
 
@@ -64,8 +68,12 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final background = colorScheme.surface;
+    final foreground = colorScheme.onSurface;
+
     return Scaffold(
-      backgroundColor: Palette.splashBg,
+      backgroundColor: background,
       body: Center(
         child: AnimatedBuilder(
           animation: _controller,
@@ -83,10 +91,10 @@ class _SplashScreenState extends State<SplashScreen>
                         'assets/logo/energma_logo.png',
                         width: 80,
                         height: 80,
-                        color: Colors.white,
+                        color: foreground,
                       ),
                       const SizedBox(height: 20),
-                      _wordmark(),
+                      _wordmark(foreground),
                     ],
                   ),
                 ),
@@ -99,7 +107,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   /// The wordmark, revealed by a left→right wipe with a sheen sweeping after it.
-  Widget _wordmark() {
+  Widget _wordmark(Color foreground) {
     return ClipRect(
       child: Align(
         alignment: Alignment.centerLeft,
@@ -109,10 +117,11 @@ class _SplashScreenState extends State<SplashScreen>
           shaderCallback: (bounds) {
             // Ride a highlight band across the text once the wipe has landed.
             final x = -0.3 + _sheen.value * 1.6;
+            final dim = foreground.withValues(alpha: 0.7);
             return LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: const [Colors.white70, Colors.white, Colors.white70],
+              colors: [dim, foreground, dim],
               stops: [
                 (x - 0.15).clamp(0.0, 1.0),
                 x.clamp(0.0, 1.0),
@@ -120,7 +129,7 @@ class _SplashScreenState extends State<SplashScreen>
               ],
             ).createShader(bounds);
           },
-          child: const Text(
+          child: Text(
             'ENERGMA',
             maxLines: 1,
             softWrap: false,
@@ -128,7 +137,7 @@ class _SplashScreenState extends State<SplashScreen>
               fontSize: 28,
               fontWeight: FontWeight.w800,
               letterSpacing: 6,
-              color: Colors.white,
+              color: foreground,
             ),
           ),
         ),
