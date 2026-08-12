@@ -797,18 +797,28 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                           ?.copyWith(fontWeight: FontWeight.w600)),
                 ),
                 const SizedBox(height: 8),
-                ...options.map((opt) => ListTile(
-                      leading: leadingOf?.call(opt),
-                      title: Text(labelOf(opt)),
-                      trailing: opt == current
-                          ? Icon(Icons.check_rounded,
-                              color: theme.colorScheme.primary)
-                          : null,
-                      onTap: () {
-                        onSelected(opt);
-                        Navigator.pop(ctx);
-                      },
-                    )),
+                Flexible(
+                  child: ConstrainedBox(
+                    // Caps visible rows at 6 — with more options than that,
+                    // the list scrolls instead of overflowing the sheet.
+                    constraints: const BoxConstraints(maxHeight: 6 * 56.0),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: options.map((opt) => ListTile(
+                            leading: leadingOf?.call(opt),
+                            title: Text(labelOf(opt)),
+                            trailing: opt == current
+                                ? Icon(Icons.check_rounded,
+                                    color: theme.colorScheme.primary)
+                                : null,
+                            onTap: () {
+                              onSelected(opt);
+                              Navigator.pop(ctx);
+                            },
+                          )).toList(),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

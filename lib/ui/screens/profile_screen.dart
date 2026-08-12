@@ -115,7 +115,8 @@ class _ProfileTab extends ConsumerWidget {
               else
                 Expanded(
                   child: ReorderableListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.fromLTRB(
+                        16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
                     itemCount: list.length,
                     onReorder: (old, newIdx) =>
                         _reorderProfiles(ref, list, old, newIdx),
@@ -458,19 +459,29 @@ class _GroupTab extends ConsumerWidget {
                           ?.copyWith(fontWeight: FontWeight.w600)),
                 ),
                 const SizedBox(height: 8),
-                ...profileList.map((p) => ListTile(
-                      leading:
-                          CircleAvatar(backgroundColor: p.color, radius: 6),
-                      title: Text(p.name),
-                      trailing: p.id == current
-                          ? Icon(Icons.check_rounded,
-                              color: theme.colorScheme.primary)
-                          : null,
-                      onTap: () {
-                        onSelected?.call(p.id);
-                        Navigator.pop(ctx);
-                      },
-                    )),
+                Flexible(
+                  child: ConstrainedBox(
+                    // Caps visible rows at 6 — with more options than that,
+                    // the list scrolls instead of overflowing the sheet.
+                    constraints: const BoxConstraints(maxHeight: 6 * 56.0),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: profileList.map((p) => ListTile(
+                            leading: CircleAvatar(
+                                backgroundColor: p.color, radius: 6),
+                            title: Text(p.name),
+                            trailing: p.id == current
+                                ? Icon(Icons.check_rounded,
+                                    color: theme.colorScheme.primary)
+                                : null,
+                            onTap: () {
+                              onSelected?.call(p.id);
+                              Navigator.pop(ctx);
+                            },
+                          )).toList(),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -537,7 +548,8 @@ class _GroupTab extends ConsumerWidget {
             else
               Expanded(
                 child: ReorderableListView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(
+                      16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
                   itemCount: list.length,
                   onReorder: (old, newIdx) =>
                       _reorderGroups(ref, list, old, newIdx),
