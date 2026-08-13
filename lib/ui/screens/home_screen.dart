@@ -702,69 +702,83 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
                 const SizedBox(height: 16),
 
-                // Profile section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'Profile',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                ListTile(
-                  leading: const Icon(Icons.remove_circle_outline, size: 20),
-                  title: const Text('None'),
-                  dense: true,
-                  selected: token.profileId == null,
-                  onTap: () => Navigator.pop(
-                      ctx, _MoveResult(profileId: '__none__')),
-                ),
-                ...profiles.map((p) => ListTile(
-                      leading: CircleAvatar(
-                          backgroundColor: p.color, radius: 8),
-                      title: Text(p.name),
-                      dense: true,
-                      selected: token.profileId == p.id,
-                      onTap: () => Navigator.pop(
-                          ctx, _MoveResult(profileId: p.id)),
-                    )),
+                Flexible(
+                  child: ConstrainedBox(
+                    // Caps visible rows at 6 — with more options than that,
+                    // the list scrolls instead of overflowing the sheet.
+                    constraints: const BoxConstraints(maxHeight: 6 * 56.0),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        // Profile section
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            'Profile',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        ListTile(
+                          leading: const Icon(Icons.remove_circle_outline,
+                              size: 20),
+                          title: const Text('None'),
+                          dense: true,
+                          selected: token.profileId == null,
+                          onTap: () => Navigator.pop(
+                              ctx, _MoveResult(profileId: '__none__')),
+                        ),
+                        ...profiles.map((p) => ListTile(
+                              leading: CircleAvatar(
+                                  backgroundColor: p.color, radius: 8),
+                              title: Text(p.name),
+                              dense: true,
+                              selected: token.profileId == p.id,
+                              onTap: () => Navigator.pop(
+                                  ctx, _MoveResult(profileId: p.id)),
+                            )),
 
-                if (groups.isNotEmpty) ...[
-                  const Divider(height: 20),
-                  // Group section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Text(
-                      'Group',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
+                        if (groups.isNotEmpty) ...[
+                          const Divider(height: 20),
+                          // Group section
+                          Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 20),
+                            child: Text(
+                              'Group',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          ListTile(
+                            leading: const Icon(Icons.remove_circle_outline,
+                                size: 20),
+                            title: const Text('None'),
+                            dense: true,
+                            selected: token.groupId == null,
+                            onTap: () => Navigator.pop(
+                                ctx, _MoveResult(groupId: '__none__')),
+                          ),
+                          ...groups.map((g) => ListTile(
+                                leading: groupIcon(g.iconName,
+                                    size: 20, color: theme.colorScheme.primary),
+                                title: Text(g.name),
+                                dense: true,
+                                selected: token.groupId == g.id,
+                                onTap: () => Navigator.pop(
+                                    ctx, _MoveResult(groupId: g.id)),
+                              )),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  ListTile(
-                    leading:
-                        const Icon(Icons.remove_circle_outline, size: 20),
-                    title: const Text('None'),
-                    dense: true,
-                    selected: token.groupId == null,
-                    onTap: () => Navigator.pop(
-                        ctx, _MoveResult(groupId: '__none__')),
-                  ),
-                  ...groups.map((g) => ListTile(
-                        leading: groupIcon(g.iconName,
-                            size: 20, color: theme.colorScheme.primary),
-                        title: Text(g.name),
-                        dense: true,
-                        selected: token.groupId == g.id,
-                        onTap: () => Navigator.pop(
-                            ctx, _MoveResult(groupId: g.id)),
-                      )),
-                ],
+                ),
               ],
             ),
           ),
