@@ -1,4 +1,4 @@
-package com.citadelauth.citadel_auth
+package com.energma.citadel2fa
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
