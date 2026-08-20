@@ -1,16 +1,17 @@
 # Citadel Auth — Google Play Release Checklist
 
-Status as of 2026-06-17. Branch: `release-prep-backup-import`.
+Status as of 2026-08-20. Refreshed after the applicationId rename and 1.0.0 version bump; original checklist dated 2026-06-17 on `release-prep-backup-import`.
 
 ## ✅ Done & verified in code/build
 
 | Area | State | Evidence |
 |---|---|---|
 | Release signing | Real keystore, `.aab` signed with release cert (not debug) | `jarsigner -verify` → `CN=Citadel Auth, O=Energma`; gradle reads `android/key.properties` (gitignored) |
-| Target SDK | `targetSdk=36`, `compileSdk=36`, `minSdk=24` | Exceeds Play's API 35 minimum |
-| Version | `versionName=0.2.0`, `versionCode=3` | `pubspec.yaml` (`0.2.0+3`) — bump `versionCode` for every upload |
+| Application ID | `com.energma.citadel2fa` | `android/app/build.gradle.kts` (`namespace` + `applicationId`); renamed from `com.citadelauth.citadel_auth` 2026-08-17. Old build stays installed as a separate app on any device that had it — not an in-place upgrade. |
+| Target SDK | `targetSdk=36`, `compileSdk=36`, `minSdk=24` | Exceeds Play's API 35 minimum — re-verify with `aapt2 dump badging` on the next release APK/AAB since these resolve from the Flutter SDK's defaults and aren't pinned in this repo |
+| Version | `versionName=1.0.0`, `versionCode=1` | `pubspec.yaml` (`1.0.0+1`) — bump `versionCode` for every upload |
 | Permissions | `CAMERA`, `USE_BIOMETRIC`, `USE_FINGERPRINT` only | `aapt2 dump permissions` on release APK |
-| Network | **None** — `INTERNET` / `ACCESS_NETWORK_STATE` stripped via manifest merger | matches "No cloud. No telemetry." |
+| Network | **None functionally reachable** — `INTERNET` / `ACCESS_NETWORK_STATE` stripped via manifest merger in the release build | matches "No cloud. No telemetry." One documented exception: `lib/ui/widgets/service_icon.dart` has a favicon-fetch fallback (`https://www.google.com/s2/favicons?domain=...`) for unrecognized token issuers. It's dead code at runtime in release builds (no INTERNET permission → request never leaves the device, silently falls back to a letter-avatar icon) but is present in source — see the Data Safety note below. |
 | Data at rest | SQLCipher (AES-256) + Argon2id; `allowBackup=false`, `fullBackupContent=false` | prevents adb backup of the vault |
 | Screen privacy | `FLAG_SECURE` (Android) + iOS snapshot overlay | blocks screenshots / recents preview |
 | Code minification | R8 + ProGuard rules | `isMinifyEnabled = true` |
@@ -23,6 +24,7 @@ Status as of 2026-06-17. Branch: `release-prep-backup-import`.
 ### Data Safety form answers (no network = simple)
 - Data collected: **None.** Data shared: **None.** No analytics, no accounts, no cloud.
 - All token secrets stay on-device, encrypted. Backups are user-initiated local files (optionally password-encrypted).
+- Reviewer note (optional free-text field): `service_icon.dart`'s favicon-fallback fetch is present in source but inert — the release manifest strips `INTERNET`/`ACCESS_NETWORK_STATE`, so the request never executes. If it did, it would only send a guessed domain derived from the issuer name typed by the user (e.g. `github.com`) to Google's favicon endpoint — never a token secret, account value, or any other vault content. Doesn't change the "no data collected/shared" answer.
 
 ## 🔧 Build the upload artifact
 ```bash
@@ -37,11 +39,13 @@ Upload the **.aab** (not the universal APK).
 - [ ] Import a `.citadel.enc` encrypted backup (decryption path added this cycle).
 
 ## 📋 Play Console steps (manual — outside the codebase)
-- [ ] Create app, set name "Citadel Auth", category, contact details.
+- [ ] Create app, set name "Citadel Auth", category (Tools/Utility), contact details.
+- [ ] **Support email**: placeholder `support@energma.co` used in `docs/store-assets/listing-copy.md` — **swap for the real address before submitting**.
 - [ ] **Privacy policy URL**: https://www.energma.co/privacy-policy (already linked in-app).
-- [ ] Complete **Data Safety** form (see answers above).
-- [ ] **Content rating** questionnaire (Utility/Tools → likely Everyone).
-- [ ] Store listing assets: icon (512×512), feature graphic (1024×500), ≥2 phone screenshots.
+- [ ] Complete **Data Safety** form (see answers above and `docs/store-assets/listing-copy.md`).
+- [ ] **Content rating** questionnaire (Utility/Tools → likely Everyone) — answers drafted in `docs/store-assets/listing-copy.md`.
+- [ ] Store listing assets (all in `docs/store-assets/`): icon-512.png, feature-graphic-1024x500.png, 4 screenshots (screenshot-1-home.png … screenshot-4-settings.png).
+- [ ] Short/long description text: `docs/store-assets/listing-copy.md`.
 - [ ] Target audience & content (not directed at children).
 - [ ] Upload `.aab` to **Internal testing** track first; run the **pre-launch report** before production.
 
