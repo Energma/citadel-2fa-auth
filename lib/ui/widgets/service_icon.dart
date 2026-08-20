@@ -98,6 +98,14 @@ class ServiceIcon extends StatelessWidget {
   }
 
   Widget _buildFaviconIcon(ThemeData theme, String domain, String name) {
+    // Inert in release builds: android/app/src/main/AndroidManifest.xml strips
+    // INTERNET/ACCESS_NETWORK_STATE, so this request never leaves the device —
+    // CachedNetworkImage fails and errorWidget below falls through to the
+    // letter avatar. If a release build ever re-adds those permissions, note
+    // that this sends the guessed domain (derived from the issuer/account
+    // name, e.g. "github.com") to Google, not any token secret or account
+    // value. See docs/PLAY_STORE_RELEASE.md for the Data Safety declaration
+    // that documents this exception.
     final faviconUrl = 'https://www.google.com/s2/favicons?domain=$domain&sz=64';
 
     return Container(
