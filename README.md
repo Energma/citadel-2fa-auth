@@ -2,9 +2,9 @@
 
 **Privacy-first 2FA authenticator. Your secrets stay on your device.**
 
-Citadel Auth is an offline-first two-factor authentication app built with Flutter. There are no accounts, no cloud sync, and no telemetry — the Android build ships with the `INTERNET` permission removed, so the app is structurally incapable of making a network request.
+Citadel Auth is an offline-first two-factor authentication app built with Flutter. There are no accounts, no cloud sync, and no telemetry. The Android release build ships with the `INTERNET` permission removed, so on Android the app is structurally incapable of making a network request. The only network-touching code path in the app — fetching a service's favicon for its token icon — is inert on Android for that reason; on iOS, which has no equivalent permission mechanism, that request carries only the issuer's domain name (e.g. `github.com`), never a secret or account value.
 
-Current version: `0.2.1+4`
+Current version: `1.0.0+1`
 
 ## Features
 
@@ -27,9 +27,11 @@ Current version: `0.2.1+4`
 - **Encrypted backups:** export files are encrypted separately with **Argon2id** (64 MB, 3 iterations) → **AES-256-GCM**. This is the backup format only; it is not what protects the vault database.
 - Master password, minimum 8 characters.
 - Unlock with the **phone's screen lock** (fingerprint, face, PIN, or pattern) or with an optional **6-digit app PIN** that is mixed into the encryption key.
+- **Wrong-PIN throttling:** after 5 failed PIN attempts, unlocking is locked out with an escalating cooldown.
 - Auto-lock: immediately, 1, 5, 15, 30 minutes, or 1 hour.
 - Screenshots and screen recording are blocked, and app contents are hidden in the recent-apps switcher.
-- Destructive actions (deleting a token, deleting a profile, exporting) require the master password.
+- Destructive actions (deleting a token, deleting a profile, deleting the entire vault, exporting) require the master password.
+- The whole vault can be permanently deleted from Settings — password-gated, with no undo.
 
 #### What is stored, and where
 
@@ -53,14 +55,14 @@ Being precise here matters more than sounding impressive:
 
 ### Appearance
 - Material 3, light and dark themes
-- **Personal Theme** — pick an accent color (8 presets or a custom hue). Buttons, chips, and highlights follow it; foreground colors are contrast-picked so light accents stay readable.
+- **Personal Theme** — a fully custom theme: pick your own background, text, and element colors (grayscale presets and sliders for background/text; 8 accent presets or a full color picker for elements). Changes apply live across the whole app, and foreground colors are contrast-picked so light accents stay readable.
 - Live countdown rings, swipe actions, one-tap copy
 
 ## Getting started
 
 ### Prerequisites
 - [Flutter](https://flutter.dev/) 3.41+ (Dart SDK `^3.11.1`)
-- [FVM](https://fvm.app/) — the project pins its Flutter version
+- [FVM](https://fvm.app/) — the project's Flutter version is managed through FVM (currently tracking the `stable` channel)
 - Android SDK
 
 ### Setup
@@ -110,7 +112,7 @@ lib/
 │       ├── vault_encryption.dart # Argon2id + AES-256-GCM (backup files)
 │       └── import_export.dart    # multi-format import/export
 ├── data/
-│   ├── database/vault_database.dart   # SQLCipher, schema v3
+│   ├── database/vault_database.dart   # SQLCipher, schema v5
 │   └── repositories/                  # token + profile CRUD
 ├── platform/
 │   ├── biometric_service.dart    # local_auth wrapper
