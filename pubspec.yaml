@@ -33,7 +33,7 @@ dependencies:
   screen_protector: ^1.4.2
 
   # QR code
-  mobile_scanner: ^6.0.2
+  mobile_scanner: ^7.2.1
   qr_flutter: ^4.1.0
 
   # UI

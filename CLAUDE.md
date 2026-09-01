@@ -9,12 +9,22 @@ Citadel Auth is a privacy-first 2FA authenticator built with Flutter. It generat
 Always use the `./dev.sh` helper script instead of running Flutter directly:
 
 ```bash
-./dev.sh start   # Launch emulator + run app
-./dev.sh get     # pub get
-./dev.sh build   # build_runner code generation
-./dev.sh test    # Run tests
-./dev.sh clean   # Clean + re-get
+./dev.sh start             # Launch emulator + run app
+./dev.sh get               # pub get
+./dev.sh build             # build_runner code generation
+./dev.sh build android     # build_runner, then build debug APK
+./dev.sh build ios         # build_runner, then build debug iOS app (simulator)
+./dev.sh build ios-device  # build_runner, then build unsigned release iOS app (device)
+./dev.sh build ipa         # build_runner, then export a signed .ipa
+./dev.sh test              # Run tests
+./dev.sh clean             # Clean + re-get
+./dev.sh android           # Build debug APK
+./dev.sh ios               # Build debug iOS app (simulator)
+./dev.sh ios-device        # Build unsigned release iOS app (device)
+./dev.sh ipa               # Export a signed .ipa
 ```
+
+`ios-device` builds `Runner.app` unsigned (`--no-codesign`) for real iPhone hardware, since the Xcode project has no `DEVELOPMENT_TEAM` configured. `ipa` runs `flutter build ipa --export-options-plist=ios/ExportOptions.plist` — this needs Energma's Apple Developer Team ID filled into that plist first (signing can't be skipped for an `.ipa` export the way it can for a plain `.app` build). See `docs/IOS_EXPORT.md` for the full signing setup and verification checklist.
 
 The project uses FVM — all Flutter commands go through `fvm flutter`.
 
