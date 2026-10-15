@@ -4,7 +4,7 @@ set -euo pipefail
 android_build() { flutter build apk --debug; }
 ios_build() { flutter build ios --simulator --debug; }
 ios_device_build() { flutter build ios --release --no-codesign; }
-ipa_build() { flutter build ipa --export-options-plist=ios/ExportOptions.plist; }
+ipa_build() { flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist; }
 
 case "${1:-}" in
   start)

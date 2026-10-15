@@ -24,7 +24,7 @@ Always use the `./dev.sh` helper script instead of running Flutter directly:
 ./dev.sh ipa               # Export a signed .ipa
 ```
 
-`ios-device` builds `Runner.app` unsigned (`--no-codesign`) for real iPhone hardware, since the Xcode project has no `DEVELOPMENT_TEAM` configured. `ipa` runs `flutter build ipa --export-options-plist=ios/ExportOptions.plist` — this needs Energma's Apple Developer Team ID filled into that plist first (signing can't be skipped for an `.ipa` export the way it can for a plain `.app` build). See `docs/IOS_EXPORT.md` for the full signing setup and verification checklist.
+`ios-device` builds `Runner.app` unsigned (`--no-codesign`) for real iPhone hardware. `ipa` runs `flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist` — a signed App Store Connect export for bundle ID `com.energma.citadel2fa` and Energma's team (needs the Energma Apple ID signed into Xcode). See `docs/IOS_EXPORT.md` for the signing setup and verification checklist.
 
 The project uses FVM — all Flutter commands go through `fvm flutter`.
 
