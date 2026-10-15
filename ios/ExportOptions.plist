@@ -2,16 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Used by `./dev.sh build ipa` (flutter build ipa --export-options-plist=ios/ExportOptions.plist).
-  Fill in teamID and provisioningProfiles with Energma's real values once available —
-  see docs/IOS_EXPORT.md for how to obtain them. Until then this file only supports
-  `signingStyle: automatic` with a team selected locally in Xcode.
+  Production export for App Store Connect / TestFlight, signed automatically with
+  Energma's team. See docs/IOS_EXPORT.md.
 -->
 <plist version="1.0">
 <dict>
 	<key>method</key>
-	<string>development</string>
+	<string>app-store-connect</string>
 	<key>teamID</key>
-	<string>REPLACE_WITH_ENERGMA_TEAM_ID</string>
+	<string>3MJ855B7PM</string>
 	<key>signingStyle</key>
 	<string>automatic</string>
 	<key>stripSwiftSymbols</key>

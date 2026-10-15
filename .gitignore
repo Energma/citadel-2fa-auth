@@ -46,6 +46,9 @@ app.*.map.json
 *.keystore
 /android/key.properties
 
+# Local iOS release settings (team ID, account email)
+/.env
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
