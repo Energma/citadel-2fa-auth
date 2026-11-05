@@ -170,7 +170,7 @@ final pinEnabledProvider = FutureProvider<bool>((ref) async {
 final autoLockDurationProvider = StateProvider<Duration>((ref) => const Duration(minutes: 5));
 
 final citadelThemeModeProvider =
-    StateProvider<CitadelThemeMode>((ref) => CitadelThemeMode.system);
+    StateProvider<CitadelThemeMode>((ref) => CitadelThemeMode.dark);
 
 /// Colors backing [CitadelThemeMode.custom]. Ignored in every other mode.
 final customThemeColorsProvider =
@@ -192,9 +192,9 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
   final themeStr = await keystore.getThemeMode();
   container.read(citadelThemeModeProvider.notifier).state = switch (themeStr) {
     'light' => CitadelThemeMode.light,
-    'dark' => CitadelThemeMode.dark,
+    'system' => CitadelThemeMode.system,
     'custom' => CitadelThemeMode.custom,
-    _ => CitadelThemeMode.system,
+    _ => CitadelThemeMode.dark,
   };
 
   final background = await keystore.getCustomBackgroundColor();

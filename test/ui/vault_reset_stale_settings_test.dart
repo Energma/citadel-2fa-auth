@@ -122,7 +122,7 @@ void main() {
     // too — deleting the vault should forget these as well.
     container.read(autoLockDurationProvider.notifier).state =
         const Duration(minutes: 30);
-    container.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.dark;
+    container.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.light;
     container.read(customThemeColorsProvider.notifier).state = const CustomThemeColors(
       background: Colors.red,
       text: Colors.red,
@@ -172,7 +172,7 @@ void main() {
     // them too, the next account would silently inherit the old one's
     // auto-lock timeout, theme, accent color, and Home-screen sort order.
     expect(container.read(autoLockDurationProvider), const Duration(minutes: 5));
-    expect(container.read(citadelThemeModeProvider), CitadelThemeMode.system);
+    expect(container.read(citadelThemeModeProvider), CitadelThemeMode.dark);
     expect(container.read(customThemeColorsProvider).element, Palette.primary);
     expect(container.read(allViewGeneralSortOrderProvider), -1);
 

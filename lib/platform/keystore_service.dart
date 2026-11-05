@@ -169,7 +169,7 @@ class KeystoreService {
 
   /// Get stored theme mode (default: 'system').
   Future<String> getThemeMode() async {
-    return await _storage.read(key: _themeModeKey) ?? 'system';
+    return await _storage.read(key: _themeModeKey) ?? 'dark';
   }
 
   /// Store the Custom theme's element (button/icon/highlight) color as a
