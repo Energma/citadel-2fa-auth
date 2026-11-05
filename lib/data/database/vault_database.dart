@@ -212,7 +212,7 @@ class VaultDatabase {
       'tokens',
       where: 'profileId = ?',
       whereArgs: [profileId],
-      orderBy: 'isPinned DESC, sortOrder ASC',
+      orderBy: 'isPinned DESC, sortOrder ASC, createdAt DESC',
     );
     return maps.map((m) => Token.fromMap(m)).toList();
   }

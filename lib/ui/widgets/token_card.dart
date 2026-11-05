@@ -14,6 +14,10 @@ class TokenCard extends StatefulWidget {
   final Future<Token> Function()? onCounterIncrement;
   final VoidCallback? onMoveToProfile;
 
+  /// Shown at the end of the header. Supplied by the parent because only it
+  /// knows the card's position in the surrounding reorderable list.
+  final Widget? dragHandle;
+
   const TokenCard({
     super.key,
     required this.token,
@@ -22,6 +26,7 @@ class TokenCard extends StatefulWidget {
     this.onDelete,
     this.onCounterIncrement,
     this.onMoveToProfile,
+    this.dragHandle,
   });
 
   @override
@@ -145,13 +150,13 @@ class _TokenCardState extends State<TokenCard>
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: _copyCode,
             onLongPress: widget.onMoveToProfile,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             splashColor: theme.colorScheme.primary.withAlpha(20),
             highlightColor: theme.colorScheme.primary.withAlpha(10),
             child: Ink(
@@ -159,11 +164,13 @@ class _TokenCardState extends State<TokenCard>
                 color: isDark
                     ? theme.colorScheme.surface.withAlpha(200)
                     : theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
+                // On a dark background the card fill and shadow barely show, so
+                // the border is what marks the card's edge.
                 border: Border.all(
                   color: isExpiring
-                      ? Colors.redAccent.withAlpha(60)
-                      : theme.colorScheme.onSurface.withAlpha(8),
+                      ? Colors.redAccent.withAlpha(160)
+                      : theme.colorScheme.onSurface.withAlpha(isDark ? 70 : 20),
                   width: 1,
                 ),
                 boxShadow: [
@@ -177,26 +184,13 @@ class _TokenCardState extends State<TokenCard>
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildHeader(theme),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                     _buildCodeSection(theme, isExpiring),
-                    if (widget.token.type == OtpType.totp) ...[
-                      const SizedBox(height: 8),
-                      // Space for the next-code row is always reserved (not just
-                      // when expiring) so the card height never changes as the
-                      // timer crosses the 5s threshold.
-                      Visibility(
-                        visible: isExpiring,
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        child: _buildNextCode(theme),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -211,7 +205,7 @@ class _TokenCardState extends State<TokenCard>
     return Row(
       children: [
         _buildIcon(theme),
-        const SizedBox(width: 14),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,7 +214,7 @@ class _TokenCardState extends State<TokenCard>
                 widget.token.issuer.isNotEmpty
                     ? widget.token.issuer
                     : widget.token.account,
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.2,
                 ),
@@ -228,7 +222,6 @@ class _TokenCardState extends State<TokenCard>
                 overflow: TextOverflow.ellipsis,
               ),
               if (widget.token.issuer.isNotEmpty) ...[
-                const SizedBox(height: 2),
                 Text(
                   widget.token.account,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -277,6 +270,7 @@ class _TokenCardState extends State<TokenCard>
             size: 18,
             color: theme.colorScheme.onSurface.withAlpha(30),
           ),
+        ?widget.dragHandle,
       ],
     );
   }
@@ -286,20 +280,39 @@ class _TokenCardState extends State<TokenCard>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: Text(
-            _formatCode(_code),
-            style: TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 3,
-              fontFamily: 'monospace',
-              color: isExpiring
-                  ? Colors.redAccent
-                  : theme.colorScheme.onSurface,
+          // Scales down instead of wrapping when a long (8-digit) code has to
+          // share the row with the next code on a narrow screen.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _formatCode(_code),
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+                fontFamily: 'monospace',
+                color: isExpiring
+                    ? Colors.redAccent
+                    : theme.colorScheme.onSurface,
+              ),
             ),
           ),
         ),
-        if (widget.token.type == OtpType.totp) _buildTimer(theme, isExpiring),
+        if (widget.token.type == OtpType.totp) ...[
+          // Width is always reserved (not just when expiring) so the code
+          // doesn't resize as the timer crosses the 5s threshold.
+          Visibility(
+            visible: isExpiring,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: _buildNextCode(theme),
+          ),
+          const SizedBox(width: 8),
+          _buildTimer(theme, isExpiring),
+        ],
         if (widget.token.type == OtpType.hotp) _buildHotpIncrement(theme),
       ],
     );
@@ -307,9 +320,11 @@ class _TokenCardState extends State<TokenCard>
 
   Widget _buildHotpIncrement(ThemeData theme) {
     return SizedBox(
-      width: 44,
-      height: 44,
+      width: 36,
+      height: 36,
       child: IconButton(
+        iconSize: 20,
+        padding: EdgeInsets.zero,
         onPressed: _incrementing ? null : _incrementCounter,
         icon: _incrementing
             ? SizedBox(
@@ -340,17 +355,17 @@ class _TokenCardState extends State<TokenCard>
         isExpiring ? Colors.redAccent : theme.colorScheme.primary;
 
     return SizedBox(
-      width: 44,
-      height: 44,
+      width: 32,
+      height: 32,
       child: Stack(
         alignment: Alignment.center,
         children: [
           SizedBox(
-            width: 44,
-            height: 44,
+            width: 32,
+            height: 32,
             child: CircularProgressIndicator(
               value: 1 - _progress,
-              strokeWidth: 3,
+              strokeWidth: 2.5,
               strokeCap: StrokeCap.round,
               backgroundColor:
                   theme.colorScheme.onSurface.withAlpha(20),
@@ -360,7 +375,7 @@ class _TokenCardState extends State<TokenCard>
           Text(
             '$_remaining',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
               color: color,
             ),
@@ -372,17 +387,18 @@ class _TokenCardState extends State<TokenCard>
 
   Widget _buildNextCode(ThemeData theme) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
           Icons.skip_next_rounded,
-          size: 16,
+          size: 14,
           color: theme.colorScheme.onSurface.withAlpha(80),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 2),
         Text(
           _formatCode(_nextCode),
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 12,
             color: theme.colorScheme.onSurface.withAlpha(80),
             fontFamily: 'monospace',
             fontWeight: FontWeight.w500,
@@ -397,7 +413,7 @@ class _TokenCardState extends State<TokenCard>
     return ServiceIcon(
       issuer: widget.token.issuer,
       account: widget.token.account,
-      size: 44,
+      size: 36,
     );
   }
 }

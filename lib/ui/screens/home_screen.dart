@@ -33,6 +33,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // would momentarily show the pre-drag order again — a visible flicker.
   List<String>? _optimisticSectionOrder;
 
+  // Same idea for token drags, per section: sectionId -> token ids in drop order.
+  final Map<String, List<String>> _optimisticTokenOrder = {};
+
+  // Sections the user opened. Everything starts collapsed. Only tracked so the
+  // chevron can follow the tile, since a custom trailing replaces its own.
+  final Set<String> _expandedSections = {};
+
   @override
   void initState() {
     super.initState();
@@ -396,8 +403,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // owned by another profile). Fold it into General so it can never become
     // invisible just because its section is missing.
     final shownGroupIds = orderedGroups.map((g) => g.id).toSet();
+    var foldedAny = false;
     for (final entry in grouped.entries) {
-      if (!shownGroupIds.contains(entry.key)) ungrouped.addAll(entry.value);
+      if (!shownGroupIds.contains(entry.key)) {
+        ungrouped.addAll(entry.value);
+        foldedAny = true;
+      }
+    }
+    // Appending put folded tokens last regardless of their saved position, which
+    // would undo a drag on the next rebuild. Search keeps its own relevance order.
+    if (foldedAny && !_isSearching) {
+      mergeSort<Token>(ungrouped,
+          compare: (a, b) => a.sortOrder.compareTo(b.sortOrder));
     }
 
     // General's position is scoped like a group's own sortOrder: per-profile
@@ -465,8 +482,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final section = displaySections[index];
           return KeyedSubtree(
             key: ValueKey('section_${section.sectionId}'),
-            child: _buildGroupSection(
-                theme, isDark, section.group, section.tokens, index),
+            child: _buildGroupSection(theme, isDark, section.group,
+                _displayTokens(section.sectionId, section.tokens), index),
           );
         },
       ),
@@ -535,10 +552,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (mounted) setState(() => _optimisticSectionOrder = null);
   }
 
+  /// [tokens] in the just-dropped order while it persists, unless the section's
+  /// tokens changed underneath it (added/deleted elsewhere).
+  List<Token> _displayTokens(String sectionId, List<Token> tokens) {
+    final override = _optimisticTokenOrder[sectionId];
+    if (override == null || override.length != tokens.length) return tokens;
+    final byId = {for (final t in tokens) t.id: t};
+    if (!override.every(byId.containsKey)) return tokens;
+    return [for (final id in override) byId[id]!];
+  }
+
+  Future<void> _reorderTokens(String sectionId, List<Token> tokens,
+      int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex == oldIndex) return;
+    final reordered = List<Token>.from(tokens);
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+
+    setState(() {
+      _optimisticTokenOrder[sectionId] = reordered.map((t) => t.id).toList();
+    });
+
+    try {
+      await ref.read(tokenRepositoryProvider).updateSortOrders({
+        for (var i = 0; i < reordered.length; i++) reordered[i].id: i,
+      });
+      final _ = await ref.refresh(tokenListProvider.future);
+    } finally {
+      // Also on failure: a kept override would hide the real order indefinitely.
+      if (mounted) setState(() => _optimisticTokenOrder.remove(sectionId));
+    }
+  }
+
+  /// The section's cards, draggable by their handle. Search results are a
+  /// filtered subset, so numbering them would overwrite the saved order of
+  /// everything else — they render as a plain, fixed list instead.
+  List<Widget> _buildSectionTokens(String sectionId, List<Token> tokens) {
+    if (_isSearching) return tokens.map((t) => _buildTokenCard(t)).toList();
+    return [
+      ReorderableListView.builder(
+        // Without its own key this list's scroll position shares a PageStorage
+        // slot with the enclosing ExpansionTile's saved bool, and throws on the
+        // type mismatch when the section opens.
+        key: PageStorageKey('tokens_$sectionId'),
+        shrinkWrap: true,
+        primary: false,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        itemCount: tokens.length,
+        onReorder: (oldIndex, newIndex) =>
+            _reorderTokens(sectionId, tokens, oldIndex, newIndex),
+        itemBuilder: (context, index) => _buildTokenCard(
+          tokens[index],
+          reorderIndex: tokens.length > 1 ? index : null,
+        ),
+      ),
+    ];
+  }
+
   Widget _buildGroupSection(ThemeData theme, bool isDark, TokenGroup? group,
       List<Token> tokens, int index) {
     final isGeneral = group == null;
     final name = isGeneral ? 'General' : group.name;
+    final sectionId = group?.id ?? '__general__';
+    // Search opens every section and locks it, or matches would stay hidden
+    // inside collapsed ones.
+    final isExpanded = _isSearching || _expandedSections.contains(sectionId);
     final leadingIconColor = isGeneral
         ? theme.colorScheme.onSurface.withAlpha(140)
         : theme.colorScheme.primary.withAlpha(180);
@@ -547,108 +626,125 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : groupIcon(group.iconName, size: 18, color: leadingIconColor);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.onSurface.withAlpha(6),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: theme.colorScheme.onSurface.withAlpha(10),
-            ),
-          ),
-          child: Theme(
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              key: PageStorageKey('group_${group?.id ?? 'general'}'),
-              initiallyExpanded: isGeneral,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-              childrenPadding: const EdgeInsets.only(bottom: 8),
-              shape: const RoundedRectangleBorder(),
-              collapsedShape: const RoundedRectangleBorder(),
-              backgroundColor: Colors.transparent,
-              collapsedBackgroundColor: Colors.transparent,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withAlpha(isDark ? 30 : 20),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${tokens.length}',
-                      style: TextStyle(
-                        color: theme.colorScheme.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          // Separate key while searching so entering search rebuilds the tile
+          // expanded, and leaving it restores what the user had open.
+          key: PageStorageKey(
+              '${_isSearching ? 'search' : 'group'}_$sectionId'),
+          initiallyExpanded: isExpanded,
+          enabled: !_isSearching,
+          dense: true,
+          onExpansionChanged: (expanded) => setState(() {
+            expanded
+                ? _expandedSections.add(sectionId)
+                : _expandedSections.remove(sectionId);
+          }),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.only(bottom: 4),
+          shape: const RoundedRectangleBorder(),
+          collapsedShape: const RoundedRectangleBorder(),
+          backgroundColor: Colors.transparent,
+          collapsedBackgroundColor: Colors.transparent,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(isDark ? 30 : 20),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${tokens.length}',
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
+                ),
+              ),
+              if (!_isSearching) ...[
+                const SizedBox(width: 8),
+                AnimatedRotation(
+                  turns: isExpanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
                     Icons.expand_more_rounded,
                     size: 20,
                     color: theme.colorScheme.onSurface.withAlpha(100),
                   ),
-                  const SizedBox(width: 8),
-                  // Explicit drag handle — buildDefaultDragHandles is off so
-                  // only this triggers a drag, leaving the tile's own
-                  // tap-to-expand gesture untouched.
-                  ReorderableDragStartListener(
-                    index: index,
-                    child: Icon(
-                      Icons.drag_indicator_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurface.withAlpha(100),
-                    ),
+                ),
+                const SizedBox(width: 8),
+                // Explicit drag handle — buildDefaultDragHandles is off so
+                // only this triggers a drag, leaving the tile's own
+                // tap-to-expand gesture untouched.
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    Icons.drag_indicator_rounded,
+                    size: 20,
+                    color: theme.colorScheme.onSurface.withAlpha(100),
                   ),
-                ],
-              ),
-              title: Row(
-                children: [
-                  leadingIcon,
-                  const SizedBox(width: 10),
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: theme.colorScheme.onSurface.withAlpha(200),
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-              children: tokens.isEmpty
-                  ? [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 16, horizontal: 20),
-                        child: Text(
-                          'No tokens in this group',
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withAlpha(80),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ]
-                  : tokens.map((t) => _buildTokenCard(t)).toList(),
-            ),
+                ),
+              ],
+            ],
           ),
+          title: Row(
+            children: [
+              leadingIcon,
+              const SizedBox(width: 10),
+              Text(
+                name,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurface.withAlpha(200),
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+          children: tokens.isEmpty
+              ? [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 16, horizontal: 20),
+                    child: Text(
+                      'No tokens in this group',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withAlpha(80),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ]
+              : _buildSectionTokens(sectionId, tokens),
         ),
       ),
     );
   }
 
-  Widget _buildTokenCard(Token token) {
+  Widget _buildTokenCard(Token token, {int? reorderIndex}) {
+    final theme = Theme.of(context);
     return TokenCard(
       key: ValueKey(token.id),
       token: token,
+      dragHandle: reorderIndex == null
+          ? null
+          : ReorderableDragStartListener(
+              index: reorderIndex,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
+                child: Icon(
+                  Icons.drag_indicator_rounded,
+                  size: 20,
+                  color: theme.colorScheme.onSurface.withAlpha(100),
+                ),
+              ),
+            ),
       onDelete: () => _deleteToken(token.id),
       onEdit: () async {
         await Navigator.push(
