@@ -693,7 +693,7 @@ class SettingsScreen extends ConsumerWidget {
           ref.invalidate(autoLockDurationProvider);
           ref.invalidate(citadelThemeModeProvider);
           ref.invalidate(customThemeColorsProvider);
-          ref.invalidate(allViewGeneralSortOrderProvider);
+          ref.invalidate(allViewLayoutProvider);
           deleted = true;
         },
       ),

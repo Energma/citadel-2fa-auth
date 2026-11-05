@@ -6,6 +6,7 @@ import '../data/repositories/token_repository.dart';
 import '../data/repositories/profile_repository.dart';
 import '../platform/biometric_service.dart';
 import '../platform/keystore_service.dart';
+import 'models/all_view_layout.dart';
 import 'models/token.dart';
 import 'models/profile.dart';
 import 'models/theme_settings.dart';
@@ -176,11 +177,15 @@ final citadelThemeModeProvider =
 final customThemeColorsProvider =
     StateProvider<CustomThemeColors>((ref) => CustomThemeColors.defaults);
 
-/// Position of the synthetic "General" section on the Home screen's "All"
-/// tab, where it pools ungrouped tokens across every profile and so can't be
-/// stored on a single profile row like [Profile.generalSortOrder]. Device-
-/// level UI preference, not vault content.
-final allViewGeneralSortOrderProvider = StateProvider<int>((ref) => -1);
+/// What the Home screen's "All" tab shows and in what order. Device-level UI
+/// preference, not vault content.
+final allViewLayoutProvider =
+    StateProvider<AllViewLayout>((ref) => const AllViewLayout());
+
+void saveAllViewLayout(WidgetRef ref, AllViewLayout layout) {
+  ref.read(allViewLayoutProvider.notifier).state = layout;
+  ref.read(keystoreServiceProvider).storeAllViewLayout(layout.toJsonString());
+}
 
 /// Load persisted settings from keystore on app start.
 Future<void> loadPersistedSettings(ProviderContainer container) async {
@@ -209,7 +214,6 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
     );
   }
 
-  final allViewGeneralOrder = await keystore.getAllViewGeneralSortOrder();
-  container.read(allViewGeneralSortOrderProvider.notifier).state =
-      allViewGeneralOrder;
+  container.read(allViewLayoutProvider.notifier).state =
+      AllViewLayout.fromJsonString(await keystore.getAllViewLayout());
 }

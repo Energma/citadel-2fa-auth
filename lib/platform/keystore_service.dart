@@ -18,7 +18,7 @@ class KeystoreService {
   static const _customElementColorKey = 'citadel_accent_color';
   static const _customBackgroundColorKey = 'citadel_custom_bg_color';
   static const _customTextColorKey = 'citadel_custom_text_color';
-  static const _allViewGeneralSortOrderKey = 'citadel_all_view_general_sort_order';
+  static const _allViewLayoutKey = 'citadel_all_view_layout';
   static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
   static const _pinAttemptsKey = 'citadel_pin_attempts';
@@ -221,18 +221,13 @@ class KeystoreService {
     await _storage.delete(key: _customTextColorKey);
   }
 
-  /// Store General's Home-screen position for the "All" tab, where it pools
-  /// ungrouped tokens across every profile and so isn't scoped to one
-  /// profile row.
-  Future<void> storeAllViewGeneralSortOrder(int order) async {
-    await _storage.write(
-        key: _allViewGeneralSortOrderKey, value: order.toString());
+  /// Store the "All" tab's arrangement, as encoded by `AllViewLayout`.
+  Future<void> storeAllViewLayout(String json) async {
+    await _storage.write(key: _allViewLayoutKey, value: json);
   }
 
-  /// Get the stored All-tab General position (default -1 = sorts first).
-  Future<int> getAllViewGeneralSortOrder() async {
-    final value = await _storage.read(key: _allViewGeneralSortOrderKey);
-    return int.tryParse(value ?? '') ?? -1;
+  Future<String?> getAllViewLayout() async {
+    return _storage.read(key: _allViewLayoutKey);
   }
 
   /// Store the master password for PIN-only login.

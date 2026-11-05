@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
+import '../../core/models/all_view_layout.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
@@ -8,6 +9,7 @@ import '../widgets/token_card.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
 import 'add_token_screen.dart';
+import 'all_view_editor_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
 
@@ -325,10 +327,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ],
               ),
             ),
+            if (ref.watch(activeProfileIdProvider) == null)
+              IconButton(
+                icon: Icon(
+                  Icons.tune_rounded,
+                  size: 20,
+                  color: theme.colorScheme.onSurface.withAlpha(120),
+                ),
+                tooltip: 'Customize All',
+                onPressed: _openAllViewEditor,
+              ),
             _buildManageButton(theme),
           ],
         ),
       ),
+    );
+  }
+
+  void _openAllViewEditor() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AllViewEditorScreen()),
     );
   }
 
@@ -386,6 +405,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildTokenList(List<Token> tokenList, List<TokenGroup> groups) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final activeProfileId = ref.watch(activeProfileIdProvider);
+
+    // Search keeps the simple grouping below: it has to reach everything,
+    // including sections the All layout hides.
+    if (activeProfileId == null && !_isSearching) {
+      return _buildAllView(theme, isDark, tokenList, groups);
+    }
 
     // Group tokens by groupId
     final Map<String?, List<Token>> grouped = {};
@@ -417,21 +443,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           compare: (a, b) => a.sortOrder.compareTo(b.sortOrder));
     }
 
-    // General's position is scoped like a group's own sortOrder: per-profile
-    // when a specific tab is active, or a device-level setting on "All"
-    // (General there pools every profile's ungrouped tokens, so it can't
-    // live on a single profile row). Read profiles fresh from the provider
-    // rather than the _profiles field — _rebuildTabs only refreshes that
-    // field when a profile's id/name changes (it exists to avoid needlessly
-    // recreating the TabController), so it can hold a stale generalSortOrder
-    // right after this exact reorder persists.
-    final activeProfileId = ref.watch(activeProfileIdProvider);
-    final int generalOrder = activeProfileId == null
-        ? ref.watch(allViewGeneralSortOrderProvider)
-        : (ref.watch(profileListProvider).valueOrNull
-                ?.firstWhereOrNull((p) => p.id == activeProfileId)
-                ?.generalSortOrder ??
-            -1);
+    // General's position is scoped like a group's own sortOrder, per profile.
+    // Read profiles fresh from the provider rather than the _profiles field —
+    // _rebuildTabs only refreshes that field when a profile's id/name changes
+    // (it exists to avoid needlessly recreating the TabController), so it can
+    // hold a stale generalSortOrder right after this exact reorder persists.
+    final int generalOrder = ref
+            .watch(profileListProvider)
+            .valueOrNull
+            ?.firstWhereOrNull((p) => p.id == activeProfileId)
+            ?.generalSortOrder ??
+        -1;
 
     final sections = <_SectionData>[
       if (ungrouped.isNotEmpty) _SectionData(group: null, tokens: ungrouped),
@@ -466,6 +488,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ]
         : naturalOrder;
 
+    return _buildSectionList(theme, isDark, displaySections);
+  }
+
+  /// The "All" tab: each visible category labeled with its profile, arranged by
+  /// [allViewLayoutProvider].
+  Widget _buildAllView(ThemeData theme, bool isDark, List<Token> tokenList,
+      List<TokenGroup> groups) {
+    final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
+    final layout = ref.watch(allViewLayoutProvider);
+    final all = buildAllViewSections(profiles, groups);
+    final tokensById = assignTokensToSections(tokenList, all);
+
+    final shown = [
+      for (final section in layout.arrange(all, (s) => s.id))
+        // A General with nothing in it is noise; an empty group is structure
+        // the user created, so it stays.
+        if (layout.isVisible(section.id) &&
+            (!section.isGeneral || tokensById.containsKey(section.id)))
+          _SectionData(
+            id: section.id,
+            group: section.group,
+            profile: section.profile,
+            tokens: tokensById[section.id] ?? [],
+          ),
+    ];
+
+    if (shown.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Nothing selected for All',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withAlpha(180),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _openAllViewEditor,
+              child: const Text('Customize All'),
+            ),
+          ],
+        ),
+      );
+    }
+    return _buildSectionList(theme, isDark, shown);
+  }
+
+  Widget _buildSectionList(
+      ThemeData theme, bool isDark, List<_SectionData> displaySections) {
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(tokenListProvider);
@@ -482,7 +555,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final section = displaySections[index];
           return KeyedSubtree(
             key: ValueKey('section_${section.sectionId}'),
-            child: _buildGroupSection(theme, isDark, section.group,
+            child: _buildGroupSection(theme, isDark, section,
                 _displayTokens(section.sectionId, section.tokens), index),
           );
         },
@@ -496,6 +569,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final reordered = List<_SectionData>.from(sections);
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, moved);
+
+    final activeProfileId = ref.read(activeProfileIdProvider);
+    if (activeProfileId == null) {
+      final allIds = buildAllViewSections(
+        ref.read(profileListProvider).valueOrNull ?? _profiles,
+        ref.read(groupListProvider).valueOrNull ?? [],
+      ).map((s) => s.id).toList();
+      saveAllViewLayout(
+        ref,
+        ref.read(allViewLayoutProvider).withShownOrder(
+            allIds, reordered.map((s) => s.sectionId).toList()),
+      );
+      return;
+    }
 
     // Show the drop result immediately and keep it stable until persistence
     // completes — see _optimisticSectionOrder's declaration for why this is
@@ -520,25 +607,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (groupOrders.isNotEmpty) repo.updateGroupSortOrders(groupOrders),
     ];
 
-    final activeProfileId = ref.read(activeProfileIdProvider);
     var touchedProfiles = false;
     if (newGeneralOrder != null) {
-      if (activeProfileId == null) {
-        writes.add(ref
-            .read(keystoreServiceProvider)
-            .storeAllViewGeneralSortOrder(newGeneralOrder));
-      } else {
-        writes.add(repo.updateGeneralSortOrder(activeProfileId, newGeneralOrder));
-        touchedProfiles = true;
-      }
+      writes.add(repo.updateGeneralSortOrder(activeProfileId, newGeneralOrder));
+      touchedProfiles = true;
     }
 
     await Future.wait(writes);
 
-    if (newGeneralOrder != null && activeProfileId == null) {
-      ref.read(allViewGeneralSortOrderProvider.notifier).state =
-          newGeneralOrder;
-    }
     ref.invalidate(groupsByProfileProvider);
 
     // Wait for the refetches so provider data matches the override before
@@ -610,11 +686,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ];
   }
 
-  Widget _buildGroupSection(ThemeData theme, bool isDark, TokenGroup? group,
+  Widget _buildGroupSection(ThemeData theme, bool isDark, _SectionData section,
       List<Token> tokens, int index) {
+    final group = section.group;
     final isGeneral = group == null;
     final name = isGeneral ? 'General' : group.name;
-    final sectionId = group?.id ?? '__general__';
+    final sectionId = section.sectionId;
     // Search opens every section and locks it, or matches would stay hidden
     // inside collapsed ones.
     final isExpanded = _isSearching || _expandedSections.contains(sectionId);
@@ -696,15 +773,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             children: [
               leadingIcon,
               const SizedBox(width: 10),
-              Text(
-                name,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: theme.colorScheme.onSurface.withAlpha(200),
-                  letterSpacing: 0.2,
+              Flexible(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface.withAlpha(200),
+                    letterSpacing: 0.2,
+                  ),
                 ),
               ),
+              // Only the All tab mixes profiles, so only it needs the label.
+              if (section.profile case final profile?) ...[
+                const SizedBox(width: 8),
+                CircleAvatar(backgroundColor: profile.color, radius: 3),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    profile.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withAlpha(130),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           children: tokens.isEmpty
@@ -969,9 +1067,20 @@ class _MoveResult {
 class _SectionData {
   final TokenGroup? group;
   final List<Token> tokens;
-  const _SectionData({required this.group, required this.tokens});
+
+  /// Set on the "All" tab, which has one General per profile and labels each
+  /// section with its owner.
+  final String? id;
+  final Profile? profile;
+
+  const _SectionData({
+    required this.group,
+    required this.tokens,
+    this.id,
+    this.profile,
+  });
 
   bool get isGeneral => group == null;
   /// Stable identity for Keys/maps — independent of position.
-  String get sectionId => group?.id ?? '__general__';
+  String get sectionId => id ?? group?.id ?? '__general__';
 }

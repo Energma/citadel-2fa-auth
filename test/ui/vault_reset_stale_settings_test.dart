@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:citadel_auth/core/models/all_view_layout.dart';
 import 'package:citadel_auth/core/models/theme_settings.dart';
 import 'package:citadel_auth/core/providers.dart';
 import 'package:citadel_auth/data/database/vault_database.dart';
@@ -128,7 +129,8 @@ void main() {
       text: Colors.red,
       element: Colors.red,
     );
-    container.read(allViewGeneralSortOrderProvider.notifier).state = 3;
+    container.read(allViewLayoutProvider.notifier).state =
+        const AllViewLayout(hidden: {'some-group'});
 
     // Phone-sized surface — the default 800x600 test window cuts off the
     // "Danger Zone" section, which sits far down the settings list.
@@ -174,7 +176,7 @@ void main() {
     expect(container.read(autoLockDurationProvider), const Duration(minutes: 5));
     expect(container.read(citadelThemeModeProvider), CitadelThemeMode.dark);
     expect(container.read(customThemeColorsProvider).element, Palette.primary);
-    expect(container.read(allViewGeneralSortOrderProvider), -1);
+    expect(container.read(allViewLayoutProvider).hidden, isEmpty);
 
     // Drain VaultDeletedScreen's message/logo timers (1400ms each) so none
     // are left pending when the test tears down.
