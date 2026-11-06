@@ -19,6 +19,7 @@ class ImportExport {
             'period': t.period,
             'counter': t.counter,
             'tags': t.tags,
+            if (t.iconPath != null) 'icon': t.iconPath,
           }).toList(),
     };
     return const JsonEncoder.withIndent('  ').convert(data);
@@ -74,6 +75,7 @@ class ImportExport {
         period: m['period'] as int? ?? 30,
         counter: m['counter'] as int? ?? 0,
         tags: (m['tags'] as List?)?.cast<String>() ?? const [],
+        iconPath: m['icon'] as String?,
       );
     }).toList();
   }

@@ -10,37 +10,95 @@ class ServiceIcon extends StatelessWidget {
   final String account;
   final double size;
 
+  /// The user's choice from the icon picker; null means pick from the name.
+  final String? iconPath;
+
+  /// Off for live previews, which would otherwise send a favicon request for
+  /// every partial name as the user types.
+  final bool useFavicon;
+
   const ServiceIcon({
     super.key,
     required this.issuer,
     required this.account,
+    this.iconPath,
+    this.useFavicon = true,
     this.size = 44,
   });
+
+  static const _servicePrefix = 'service:';
+  static const _emojiPrefix = 'emoji:';
+
+  static String iconForService(String service) => '$_servicePrefix$service';
+  static String iconForEmoji(String emoji) => '$_emojiPrefix$emoji';
+
+  /// Every service the picker can offer, alphabetically.
+  static List<String> get pickableServices =>
+      {..._bundledIcons, ..._knownIcons.keys}.toList()..sort();
+
+  static String serviceLabel(String service) =>
+      _serviceLabels[service] ??
+      '${service[0].toUpperCase()}${service.substring(1)}';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final name = issuer.isNotEmpty ? issuer : account;
+
+    // Anything unrecognized (e.g. from a hand-edited backup) falls through to
+    // the automatic icon below.
+    final chosen = iconPath;
+    if (chosen != null) {
+      if (chosen.startsWith(_emojiPrefix) &&
+          chosen.length > _emojiPrefix.length) {
+        return _buildEmojiIcon(theme, chosen.substring(_emojiPrefix.length));
+      }
+      if (chosen.startsWith(_servicePrefix)) {
+        final icon =
+            _buildServiceIcon(theme, chosen.substring(_servicePrefix.length));
+        if (icon != null) return icon;
+      }
+    }
+
     final normalized = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-
-    // Exact brand logos bundled as assets beat the generic Material glyphs,
-    // and being local they never leak which services the user has.
-    if (_bundledIcons.contains(normalized)) {
-      return _buildBundledIcon(theme, normalized);
-    }
-
-    final iconData = _knownIcons[normalized];
-    if (iconData != null) {
-      return _buildKnownIcon(theme, iconData);
-    }
+    final known = _buildServiceIcon(theme, normalized);
+    if (known != null) return known;
 
     // Try favicon for unknown issuers
-    final domain = _guessDomain(normalized);
+    final domain = useFavicon ? _guessDomain(normalized) : null;
     if (domain != null) {
       return _buildFaviconIcon(theme, domain, name);
     }
 
     return _buildLetterAvatar(theme, name);
+  }
+
+  Widget? _buildServiceIcon(ThemeData theme, String service) {
+    // Exact brand logos bundled as assets beat the generic Material glyphs,
+    // and being local they never leak which services the user has.
+    if (_bundledIcons.contains(service)) {
+      return _buildBundledIcon(theme, service);
+    }
+    final iconData = _knownIcons[service];
+    return iconData == null ? null : _buildKnownIcon(theme, iconData);
+  }
+
+  Widget _buildEmojiIcon(ThemeData theme, String emoji) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withAlpha(25),
+        borderRadius: BorderRadius.circular(size * 0.32),
+      ),
+      child: Center(
+        child: Text(
+          emoji,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: size * 0.5, height: 1),
+        ),
+      ),
+    );
   }
 
   Widget _buildBundledIcon(ThemeData theme, String name) {
@@ -189,6 +247,16 @@ class ServiceIcon extends StatelessWidget {
     'protonmail', 'reddit', 'riot', 'riotgames', 'signal', 'slack',
     'snapchat', 'spotify', 'steam', 'stripe', 'telegram', 'tiktok',
     'tutanota', 'twitch', 'twitter', 'ubisoft', 'vercel', 'whatsapp', 'x',
+  };
+
+  // Only names that plain capitalization would get wrong.
+  static const Map<String, String> _serviceLabels = {
+    'aws': 'AWS', 'battlenet': 'Battle.net', 'digitalocean': 'DigitalOcean',
+    'ea': 'EA', 'epicgames': 'Epic Games', 'github': 'GitHub',
+    'gitlab': 'GitLab', 'godaddy': 'GoDaddy', 'linkedin': 'LinkedIn',
+    'npm': 'npm', 'ovh': 'OVH', 'paypal': 'PayPal',
+    'playstation': 'PlayStation', 'protonmail': 'Proton Mail',
+    'riotgames': 'Riot Games', 'tiktok': 'TikTok', 'whatsapp': 'WhatsApp',
   };
 
   static final Map<String, _ServiceIconData> _knownIcons = {
