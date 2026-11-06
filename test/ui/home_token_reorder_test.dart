@@ -7,6 +7,7 @@ import 'package:citadel_auth/core/models/token.dart';
 import 'package:citadel_auth/core/providers.dart';
 import 'package:citadel_auth/data/database/vault_database.dart';
 import 'package:citadel_auth/data/repositories/token_repository.dart';
+import 'package:citadel_auth/platform/keystore_service.dart';
 import 'package:citadel_auth/ui/screens/home_screen.dart';
 import 'package:citadel_auth/ui/theme/app_theme.dart';
 import 'package:citadel_auth/ui/widgets/token_card.dart';
@@ -30,15 +31,29 @@ class _FakeTokenRepository extends TokenRepository {
   }
 }
 
+class _FakeKeystore extends KeystoreService {
+  Set<String>? expanded;
+
+  @override
+  Future<void> storeExpandedSections(Set<String> ids) async => expanded = ids;
+}
+
 Token _token(String issuer) =>
     Token(id: issuer, issuer: issuer, account: 'a@b.c', secret: _secret);
 
-Future<_FakeTokenRepository> _pumpHome(WidgetTester tester) async {
+Future<_FakeTokenRepository> _pumpHome(
+  WidgetTester tester, {
+  _FakeKeystore? keystore,
+  Set<String> expanded = const {},
+}) async {
   final repo = _FakeTokenRepository([_token('Alpha'), _token('Bravo')]);
   await tester.pumpWidget(ProviderScope(
     overrides: [
+      keystoreServiceProvider.overrideWithValue(keystore ?? _FakeKeystore()),
+      expandedSectionsProvider.overrideWith((ref) => expanded),
       tokenRepositoryProvider.overrideWithValue(repo),
       tokenListProvider.overrideWith((ref) async => repo.tokens),
+      searchResultsProvider.overrideWith((ref) async => repo.tokens),
       profileListProvider.overrideWith((ref) async => <Profile>[]),
       groupListProvider.overrideWith((ref) async => <TokenGroup>[]),
     ],
@@ -60,6 +75,45 @@ void main() {
 
     await tester.tap(find.text('General'));
     await tester.pumpAndSettle();
+    expect(_visibleIssuers(tester), ['Alpha', 'Bravo']);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('typing searches without opening anything, clearing restores',
+      (tester) async {
+    await _pumpHome(tester);
+    expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
+    expect(find.byType(TokenCard), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'a');
+    await tester.pumpAndSettle();
+    expect(_visibleIssuers(tester), ['Alpha', 'Bravo']);
+
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TokenCard), findsNothing);
+    expect(find.text('General'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('opening and closing a section is remembered', (tester) async {
+    final keystore = _FakeKeystore();
+    await _pumpHome(tester, keystore: keystore);
+
+    await tester.tap(find.text('General'));
+    await tester.pumpAndSettle();
+    final saved = keystore.expanded!;
+    expect(saved, hasLength(1));
+
+    await tester.tap(find.text('General'));
+    await tester.pumpAndSettle();
+    expect(keystore.expanded, isEmpty);
+
+    // Same id, fresh app: the section comes back open.
+    await tester.pumpWidget(const SizedBox());
+    await _pumpHome(tester, expanded: saved);
     expect(_visibleIssuers(tester), ['Alpha', 'Bravo']);
 
     await tester.pumpWidget(const SizedBox());

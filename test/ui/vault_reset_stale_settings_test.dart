@@ -131,6 +131,7 @@ void main() {
     );
     container.read(allViewLayoutProvider.notifier).state =
         const AllViewLayout(hidden: {'some-group'});
+    container.read(expandedSectionsProvider.notifier).state = {'some-group'};
 
     // Phone-sized surface — the default 800x600 test window cuts off the
     // "Danger Zone" section, which sits far down the settings list.
@@ -177,6 +178,7 @@ void main() {
     expect(container.read(citadelThemeModeProvider), CitadelThemeMode.dark);
     expect(container.read(customThemeColorsProvider).element, Palette.primary);
     expect(container.read(allViewLayoutProvider).hidden, isEmpty);
+    expect(container.read(expandedSectionsProvider), isEmpty);
 
     // Drain VaultDeletedScreen's message/logo timers (1400ms each) so none
     // are left pending when the test tears down.

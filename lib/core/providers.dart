@@ -187,6 +187,34 @@ void saveAllViewLayout(WidgetRef ref, AllViewLayout layout) {
   ref.read(keystoreServiceProvider).storeAllViewLayout(layout.toJsonString());
 }
 
+/// Home screen sections the user left open. Sections start closed, so a long
+/// list stays scannable until the user chooses otherwise.
+final expandedSectionsProvider = StateProvider<Set<String>>((ref) => const {});
+
+void saveExpandedSections(WidgetRef ref, Set<String> ids) {
+  ref.read(expandedSectionsProvider.notifier).state = ids;
+  ref.read(keystoreServiceProvider).storeExpandedSections(ids);
+}
+
+/// Shortcuts shown at the top of a Home section, keyed by section id (a group
+/// id, or [AllViewSection.generalId]); each value lists group ids in order.
+final sectionShortcutsProvider =
+    StateProvider<Map<String, List<String>>>((ref) => const {});
+
+void saveSectionShortcuts(WidgetRef ref, Map<String, List<String>> shortcuts) {
+  ref.read(sectionShortcutsProvider.notifier).state = shortcuts;
+  ref.read(keystoreServiceProvider).storeSectionShortcuts(shortcuts);
+}
+
+/// Every group in every profile, whichever tab is active. Shortcuts can point
+/// across profiles, so the active-profile [groupListProvider] isn't enough.
+final allGroupsProvider = FutureProvider<List<TokenGroup>>((ref) async {
+  // Re-runs whenever the group list is invalidated, which every group edit
+  // already does, so this never needs invalidating on its own.
+  await ref.watch(groupListProvider.future);
+  return ref.read(profileRepositoryProvider).getAllGroups();
+});
+
 /// Load persisted settings from keystore on app start.
 Future<void> loadPersistedSettings(ProviderContainer container) async {
   final keystore = container.read(keystoreServiceProvider);
@@ -216,4 +244,10 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
 
   container.read(allViewLayoutProvider.notifier).state =
       AllViewLayout.fromJsonString(await keystore.getAllViewLayout());
+
+  container.read(expandedSectionsProvider.notifier).state =
+      await keystore.getExpandedSections();
+
+  container.read(sectionShortcutsProvider.notifier).state =
+      await keystore.getSectionShortcuts();
 }

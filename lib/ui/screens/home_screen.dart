@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../widgets/token_card.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
+import '../widgets/section_editor_sheet.dart';
 import 'add_token_screen.dart';
 import 'all_view_editor_screen.dart';
 import 'settings_screen.dart';
@@ -40,7 +41,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // Sections the user opened. Everything starts collapsed. Only tracked so the
   // chevron can follow the tile, since a custom trailing replaces its own.
-  final Set<String> _expandedSections = {};
 
   @override
   void initState() {
@@ -184,28 +184,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       floating: true,
       snap: true,
       pinned: true,
-      title: _isSearching
-          ? _buildSearchField(theme)
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/logo/citadel-logo.png',
-                  width: 32,
-                  height: 32,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Citadel',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-              ],
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/logo/citadel-logo.png',
+            width: 32,
+            height: 32,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Citadel',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: theme.colorScheme.onSurface,
             ),
+          ),
+        ],
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(60),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: _buildSearchField(theme),
+        ),
+      ),
       actions: [
         Tooltip(
           message: 'Add Key',
@@ -227,22 +232,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         const SizedBox(width: 4),
         IconButton(
-          icon: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: Icon(
-              _isSearching ? Icons.close_rounded : Icons.search_rounded,
-              key: ValueKey(_isSearching),
-            ),
-          ),
-          onPressed: () {
-            setState(() => _isSearching = !_isSearching);
-            if (!_isSearching) {
-              _searchController.clear();
-              ref.read(searchQueryProvider.notifier).state = '';
-            }
-          },
-        ),
-        IconButton(
           icon: const Icon(Icons.settings_rounded),
           onPressed: () => Navigator.push(
             context,
@@ -254,20 +243,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  void _setSearch(String query) {
+    ref.read(searchQueryProvider.notifier).state = query;
+    setState(() => _isSearching = query.isNotEmpty);
+  }
+
   Widget _buildSearchField(ThemeData theme) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(24),
+      borderSide: BorderSide(color: theme.colorScheme.onSurface.withAlpha(40)),
+    );
     return TextField(
       controller: _searchController,
-      autofocus: true,
       style: theme.textTheme.bodyLarge,
+      textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Search tokens...',
         hintStyle: TextStyle(
           color: theme.colorScheme.onSurface.withAlpha(100),
         ),
-        border: InputBorder.none,
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20),
+                tooltip: 'Clear search',
+                onPressed: () {
+                  _searchController.clear();
+                  _setSearch('');
+                },
+              )
+            : null,
+        isDense: true,
         filled: false,
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+        ),
       ),
-      onChanged: (q) => ref.read(searchQueryProvider.notifier).state = q,
+      onChanged: _setSearch,
     );
   }
 
@@ -455,8 +470,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ?.generalSortOrder ??
         -1;
 
+    // Same id the All tab uses, so this General's open state and shortcuts
+    // carry over between the two.
+    final generalId = AllViewSection.generalId(activeProfileId);
+    final shortcuts = ref.watch(sectionShortcutsProvider);
     final sections = <_SectionData>[
-      if (ungrouped.isNotEmpty) _SectionData(group: null, tokens: ungrouped),
+      if (ungrouped.isNotEmpty || (shortcuts[generalId]?.isNotEmpty ?? false))
+        _SectionData(group: null, tokens: ungrouped, id: generalId),
       for (final group in orderedGroups)
         _SectionData(group: group, tokens: grouped[group.id] ?? []),
     ];
@@ -497,6 +517,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       List<TokenGroup> groups) {
     final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
     final layout = ref.watch(allViewLayoutProvider);
+    final shortcuts = ref.watch(sectionShortcutsProvider);
     final all = buildAllViewSections(profiles, groups);
     final tokensById = assignTokensToSections(tokenList, all);
 
@@ -505,7 +526,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         // A General with nothing in it is noise; an empty group is structure
         // the user created, so it stays.
         if (layout.isVisible(section.id) &&
-            (!section.isGeneral || tokensById.containsKey(section.id)))
+            (!section.isGeneral ||
+                tokensById.containsKey(section.id) ||
+                (shortcuts[section.id]?.isNotEmpty ?? false)))
           _SectionData(
             id: section.id,
             group: section.group,
@@ -694,13 +717,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final sectionId = section.sectionId;
     // Search opens every section and locks it, or matches would stay hidden
     // inside collapsed ones.
-    final isExpanded = _isSearching || _expandedSections.contains(sectionId);
+    final isExpanded = _isSearching ||
+        ref.watch(expandedSectionsProvider).contains(sectionId);
     final leadingIconColor = isGeneral
         ? theme.colorScheme.onSurface.withAlpha(140)
         : theme.colorScheme.primary.withAlpha(180);
     final leadingIcon = isGeneral
         ? Icon(Icons.apps_rounded, size: 18, color: leadingIconColor)
         : groupIcon(group.iconName, size: 18, color: leadingIconColor);
+    final shortcutRows =
+        _isSearching ? <Widget>[] : _buildShortcuts(theme, sectionId);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -714,11 +740,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           initiallyExpanded: isExpanded,
           enabled: !_isSearching,
           dense: true,
-          onExpansionChanged: (expanded) => setState(() {
-            expanded
-                ? _expandedSections.add(sectionId)
-                : _expandedSections.remove(sectionId);
-          }),
+          onExpansionChanged: (expanded) {
+            final open = {...ref.read(expandedSectionsProvider)};
+            expanded ? open.add(sectionId) : open.remove(sectionId);
+            saveExpandedSections(ref, open);
+          },
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.only(bottom: 4),
           shape: const RoundedRectangleBorder(),
@@ -744,7 +770,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ),
               if (!_isSearching) ...[
-                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  iconSize: 18,
+                  tooltip: 'Edit $name',
+                  visualDensity: VisualDensity.compact,
+                  color: theme.colorScheme.onSurface.withAlpha(130),
+                  onPressed: () => showSectionEditor(context,
+                      sectionId: sectionId, group: group),
+                ),
                 AnimatedRotation(
                   turns: isExpanded ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
@@ -805,24 +839,71 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ],
             ],
           ),
-          children: tokens.isEmpty
-              ? [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 16, horizontal: 20),
-                    child: Text(
-                      'No tokens in this group',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withAlpha(80),
-                        fontSize: 13,
-                      ),
-                    ),
+          children: [
+            ...shortcutRows,
+            if (tokens.isNotEmpty)
+              ..._buildSectionTokens(sectionId, tokens)
+            else if (shortcutRows.isEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                child: Text(
+                  'No tokens in this group',
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface.withAlpha(80),
+                    fontSize: 13,
                   ),
-                ]
-              : _buildSectionTokens(sectionId, tokens),
+                ),
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  /// Links to other categories that the user pinned to this section. Ids whose
+  /// category was since deleted are skipped rather than shown broken.
+  List<Widget> _buildShortcuts(ThemeData theme, String sectionId) {
+    final ids = ref.watch(sectionShortcutsProvider)[sectionId];
+    if (ids == null || ids.isEmpty) return const [];
+    final groups = ref.watch(allGroupsProvider).valueOrNull ?? const [];
+    final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
+    return [
+      for (final id in ids)
+        if (groups.firstWhereOrNull((g) => g.id == id) case final group?)
+          ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+            leading: Icon(Icons.subdirectory_arrow_right_rounded,
+                size: 18, color: theme.colorScheme.primary.withAlpha(180)),
+            title: Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                  text: '${profiles.firstWhereOrNull((p) => p.id == group.profileId)?.name ?? ''} › ',
+                  style: TextStyle(
+                      color: theme.colorScheme.onSurface.withAlpha(140)),
+                ),
+                TextSpan(
+                    text: group.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Icon(Icons.chevron_right_rounded,
+                size: 18, color: theme.colorScheme.onSurface.withAlpha(100)),
+            onTap: () => _openShortcut(group),
+          ),
+    ];
+  }
+
+  /// Goes to the category's own profile tab with the category open.
+  void _openShortcut(TokenGroup group) {
+    saveExpandedSections(
+        ref, {...ref.read(expandedSectionsProvider), group.id});
+    final index = _profiles.indexWhere((p) => p.id == group.profileId);
+    if (index >= 0) _tabController?.animateTo(index + 1);
   }
 
   Widget _buildTokenCard(Token token, {int? reorderIndex}) {
