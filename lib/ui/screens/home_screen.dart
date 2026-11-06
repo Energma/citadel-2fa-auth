@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
+import '../../core/models/all_view_layout.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../widgets/token_card.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
+import '../widgets/section_editor_sheet.dart';
 import 'add_token_screen.dart';
+import 'all_view_editor_screen.dart';
 import 'settings_screen.dart';
 import 'profile_screen.dart';
 
@@ -32,6 +35,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // happens mid-persist (NestedScrollView, another watched provider, ...)
   // would momentarily show the pre-drag order again — a visible flicker.
   List<String>? _optimisticSectionOrder;
+
+  // Same idea for token drags, per section: sectionId -> token ids in drop order.
+  final Map<String, List<String>> _optimisticTokenOrder = {};
+
+  // Sections the user opened. Everything starts collapsed. Only tracked so the
+  // chevron can follow the tile, since a custom trailing replaces its own.
 
   @override
   void initState() {
@@ -175,28 +184,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       floating: true,
       snap: true,
       pinned: true,
-      title: _isSearching
-          ? _buildSearchField(theme)
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/logo/citadel-logo.png',
-                  width: 32,
-                  height: 32,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Citadel',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-              ],
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/logo/citadel-logo.png',
+            width: 32,
+            height: 32,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Citadel',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: theme.colorScheme.onSurface,
             ),
+          ),
+        ],
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(60),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: _buildSearchField(theme),
+        ),
+      ),
       actions: [
         Tooltip(
           message: 'Add Key',
@@ -218,22 +232,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
         const SizedBox(width: 4),
         IconButton(
-          icon: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: Icon(
-              _isSearching ? Icons.close_rounded : Icons.search_rounded,
-              key: ValueKey(_isSearching),
-            ),
-          ),
-          onPressed: () {
-            setState(() => _isSearching = !_isSearching);
-            if (!_isSearching) {
-              _searchController.clear();
-              ref.read(searchQueryProvider.notifier).state = '';
-            }
-          },
-        ),
-        IconButton(
           icon: const Icon(Icons.settings_rounded),
           onPressed: () => Navigator.push(
             context,
@@ -245,20 +243,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  void _setSearch(String query) {
+    ref.read(searchQueryProvider.notifier).state = query;
+    setState(() => _isSearching = query.isNotEmpty);
+  }
+
   Widget _buildSearchField(ThemeData theme) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(24),
+      borderSide: BorderSide(color: theme.colorScheme.onSurface.withAlpha(40)),
+    );
     return TextField(
       controller: _searchController,
-      autofocus: true,
       style: theme.textTheme.bodyLarge,
+      textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Search tokens...',
         hintStyle: TextStyle(
           color: theme.colorScheme.onSurface.withAlpha(100),
         ),
-        border: InputBorder.none,
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20),
+                tooltip: 'Clear search',
+                onPressed: () {
+                  _searchController.clear();
+                  _setSearch('');
+                },
+              )
+            : null,
+        isDense: true,
         filled: false,
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+        ),
       ),
-      onChanged: (q) => ref.read(searchQueryProvider.notifier).state = q,
+      onChanged: _setSearch,
     );
   }
 
@@ -318,10 +342,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ],
               ),
             ),
+            if (ref.watch(activeProfileIdProvider) == null)
+              IconButton(
+                icon: Icon(
+                  Icons.tune_rounded,
+                  size: 20,
+                  color: theme.colorScheme.onSurface.withAlpha(120),
+                ),
+                tooltip: 'Customize All',
+                onPressed: _openAllViewEditor,
+              ),
             _buildManageButton(theme),
           ],
         ),
       ),
+    );
+  }
+
+  void _openAllViewEditor() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AllViewEditorScreen()),
     );
   }
 
@@ -379,6 +420,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildTokenList(List<Token> tokenList, List<TokenGroup> groups) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final activeProfileId = ref.watch(activeProfileIdProvider);
+
+    // Search keeps the simple grouping below: it has to reach everything,
+    // including sections the All layout hides.
+    if (activeProfileId == null && !_isSearching) {
+      return _buildAllView(theme, isDark, tokenList, groups);
+    }
 
     // Group tokens by groupId
     final Map<String?, List<Token>> grouped = {};
@@ -396,28 +444,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // owned by another profile). Fold it into General so it can never become
     // invisible just because its section is missing.
     final shownGroupIds = orderedGroups.map((g) => g.id).toSet();
+    var foldedAny = false;
     for (final entry in grouped.entries) {
-      if (!shownGroupIds.contains(entry.key)) ungrouped.addAll(entry.value);
+      if (!shownGroupIds.contains(entry.key)) {
+        ungrouped.addAll(entry.value);
+        foldedAny = true;
+      }
+    }
+    // Appending put folded tokens last regardless of their saved position, which
+    // would undo a drag on the next rebuild. Search keeps its own relevance order.
+    if (foldedAny && !_isSearching) {
+      mergeSort<Token>(ungrouped,
+          compare: (a, b) => a.sortOrder.compareTo(b.sortOrder));
     }
 
-    // General's position is scoped like a group's own sortOrder: per-profile
-    // when a specific tab is active, or a device-level setting on "All"
-    // (General there pools every profile's ungrouped tokens, so it can't
-    // live on a single profile row). Read profiles fresh from the provider
-    // rather than the _profiles field — _rebuildTabs only refreshes that
-    // field when a profile's id/name changes (it exists to avoid needlessly
-    // recreating the TabController), so it can hold a stale generalSortOrder
-    // right after this exact reorder persists.
-    final activeProfileId = ref.watch(activeProfileIdProvider);
-    final int generalOrder = activeProfileId == null
-        ? ref.watch(allViewGeneralSortOrderProvider)
-        : (ref.watch(profileListProvider).valueOrNull
-                ?.firstWhereOrNull((p) => p.id == activeProfileId)
-                ?.generalSortOrder ??
-            -1);
+    // General's position is scoped like a group's own sortOrder, per profile.
+    // Read profiles fresh from the provider rather than the _profiles field —
+    // _rebuildTabs only refreshes that field when a profile's id/name changes
+    // (it exists to avoid needlessly recreating the TabController), so it can
+    // hold a stale generalSortOrder right after this exact reorder persists.
+    final int generalOrder = ref
+            .watch(profileListProvider)
+            .valueOrNull
+            ?.firstWhereOrNull((p) => p.id == activeProfileId)
+            ?.generalSortOrder ??
+        -1;
 
+    // Same id the All tab uses, so this General's open state and shortcuts
+    // carry over between the two.
+    final generalId = AllViewSection.generalId(activeProfileId);
+    final shortcuts = ref.watch(sectionShortcutsProvider);
     final sections = <_SectionData>[
-      if (ungrouped.isNotEmpty) _SectionData(group: null, tokens: ungrouped),
+      if (ungrouped.isNotEmpty || (shortcuts[generalId]?.isNotEmpty ?? false))
+        _SectionData(group: null, tokens: ungrouped, id: generalId),
       for (final group in orderedGroups)
         _SectionData(group: group, tokens: grouped[group.id] ?? []),
     ];
@@ -449,6 +508,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ]
         : naturalOrder;
 
+    return _buildSectionList(theme, isDark, displaySections);
+  }
+
+  /// The "All" tab: each visible category labeled with its profile, arranged by
+  /// [allViewLayoutProvider].
+  Widget _buildAllView(ThemeData theme, bool isDark, List<Token> tokenList,
+      List<TokenGroup> groups) {
+    final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
+    final layout = ref.watch(allViewLayoutProvider);
+    final shortcuts = ref.watch(sectionShortcutsProvider);
+    final all = buildAllViewSections(profiles, groups);
+    final tokensById = assignTokensToSections(tokenList, all);
+
+    final shown = [
+      for (final section in layout.arrange(all, (s) => s.id))
+        // A General with nothing in it is noise; an empty group is structure
+        // the user created, so it stays.
+        if (layout.isVisible(section.id) &&
+            (!section.isGeneral ||
+                tokensById.containsKey(section.id) ||
+                (shortcuts[section.id]?.isNotEmpty ?? false)))
+          _SectionData(
+            id: section.id,
+            group: section.group,
+            profile: section.profile,
+            tokens: tokensById[section.id] ?? [],
+          ),
+    ];
+
+    if (shown.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Nothing selected for All',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withAlpha(180),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _openAllViewEditor,
+              child: const Text('Customize All'),
+            ),
+          ],
+        ),
+      );
+    }
+    return _buildSectionList(theme, isDark, shown);
+  }
+
+  Widget _buildSectionList(
+      ThemeData theme, bool isDark, List<_SectionData> displaySections) {
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(tokenListProvider);
@@ -465,8 +578,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final section = displaySections[index];
           return KeyedSubtree(
             key: ValueKey('section_${section.sectionId}'),
-            child: _buildGroupSection(
-                theme, isDark, section.group, section.tokens, index),
+            child: _buildGroupSection(theme, isDark, section,
+                _displayTokens(section.sectionId, section.tokens), index),
           );
         },
       ),
@@ -479,6 +592,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final reordered = List<_SectionData>.from(sections);
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, moved);
+
+    final activeProfileId = ref.read(activeProfileIdProvider);
+    if (activeProfileId == null) {
+      final allIds = buildAllViewSections(
+        ref.read(profileListProvider).valueOrNull ?? _profiles,
+        ref.read(groupListProvider).valueOrNull ?? [],
+      ).map((s) => s.id).toList();
+      saveAllViewLayout(
+        ref,
+        ref.read(allViewLayoutProvider).withShownOrder(
+            allIds, reordered.map((s) => s.sectionId).toList()),
+      );
+      return;
+    }
 
     // Show the drop result immediately and keep it stable until persistence
     // completes — see _optimisticSectionOrder's declaration for why this is
@@ -503,25 +630,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (groupOrders.isNotEmpty) repo.updateGroupSortOrders(groupOrders),
     ];
 
-    final activeProfileId = ref.read(activeProfileIdProvider);
     var touchedProfiles = false;
     if (newGeneralOrder != null) {
-      if (activeProfileId == null) {
-        writes.add(ref
-            .read(keystoreServiceProvider)
-            .storeAllViewGeneralSortOrder(newGeneralOrder));
-      } else {
-        writes.add(repo.updateGeneralSortOrder(activeProfileId, newGeneralOrder));
-        touchedProfiles = true;
-      }
+      writes.add(repo.updateGeneralSortOrder(activeProfileId, newGeneralOrder));
+      touchedProfiles = true;
     }
 
     await Future.wait(writes);
 
-    if (newGeneralOrder != null && activeProfileId == null) {
-      ref.read(allViewGeneralSortOrderProvider.notifier).state =
-          newGeneralOrder;
-    }
     ref.invalidate(groupsByProfileProvider);
 
     // Wait for the refetches so provider data matches the override before
@@ -535,120 +651,279 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (mounted) setState(() => _optimisticSectionOrder = null);
   }
 
-  Widget _buildGroupSection(ThemeData theme, bool isDark, TokenGroup? group,
+  /// [tokens] in the just-dropped order while it persists, unless the section's
+  /// tokens changed underneath it (added/deleted elsewhere).
+  List<Token> _displayTokens(String sectionId, List<Token> tokens) {
+    final override = _optimisticTokenOrder[sectionId];
+    if (override == null || override.length != tokens.length) return tokens;
+    final byId = {for (final t in tokens) t.id: t};
+    if (!override.every(byId.containsKey)) return tokens;
+    return [for (final id in override) byId[id]!];
+  }
+
+  Future<void> _reorderTokens(String sectionId, List<Token> tokens,
+      int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex == oldIndex) return;
+    final reordered = List<Token>.from(tokens);
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+
+    setState(() {
+      _optimisticTokenOrder[sectionId] = reordered.map((t) => t.id).toList();
+    });
+
+    try {
+      await ref.read(tokenRepositoryProvider).updateSortOrders({
+        for (var i = 0; i < reordered.length; i++) reordered[i].id: i,
+      });
+      final _ = await ref.refresh(tokenListProvider.future);
+    } finally {
+      // Also on failure: a kept override would hide the real order indefinitely.
+      if (mounted) setState(() => _optimisticTokenOrder.remove(sectionId));
+    }
+  }
+
+  /// The section's cards, draggable by their handle. Search results are a
+  /// filtered subset, so numbering them would overwrite the saved order of
+  /// everything else — they render as a plain, fixed list instead.
+  List<Widget> _buildSectionTokens(String sectionId, List<Token> tokens) {
+    if (_isSearching) return tokens.map((t) => _buildTokenCard(t)).toList();
+    return [
+      ReorderableListView.builder(
+        // Without its own key this list's scroll position shares a PageStorage
+        // slot with the enclosing ExpansionTile's saved bool, and throws on the
+        // type mismatch when the section opens.
+        key: PageStorageKey('tokens_$sectionId'),
+        shrinkWrap: true,
+        primary: false,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        itemCount: tokens.length,
+        onReorder: (oldIndex, newIndex) =>
+            _reorderTokens(sectionId, tokens, oldIndex, newIndex),
+        itemBuilder: (context, index) => _buildTokenCard(
+          tokens[index],
+          reorderIndex: tokens.length > 1 ? index : null,
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildGroupSection(ThemeData theme, bool isDark, _SectionData section,
       List<Token> tokens, int index) {
+    final group = section.group;
     final isGeneral = group == null;
     final name = isGeneral ? 'General' : group.name;
+    final sectionId = section.sectionId;
+    // Search opens every section and locks it, or matches would stay hidden
+    // inside collapsed ones.
+    final isExpanded = _isSearching ||
+        ref.watch(expandedSectionsProvider).contains(sectionId);
     final leadingIconColor = isGeneral
         ? theme.colorScheme.onSurface.withAlpha(140)
         : theme.colorScheme.primary.withAlpha(180);
     final leadingIcon = isGeneral
         ? Icon(Icons.apps_rounded, size: 18, color: leadingIconColor)
         : groupIcon(group.iconName, size: 18, color: leadingIconColor);
+    final shortcutRows =
+        _isSearching ? <Widget>[] : _buildShortcuts(theme, sectionId);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.onSurface.withAlpha(6),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: theme.colorScheme.onSurface.withAlpha(10),
-            ),
-          ),
-          child: Theme(
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              key: PageStorageKey('group_${group?.id ?? 'general'}'),
-              initiallyExpanded: isGeneral,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-              childrenPadding: const EdgeInsets.only(bottom: 8),
-              shape: const RoundedRectangleBorder(),
-              collapsedShape: const RoundedRectangleBorder(),
-              backgroundColor: Colors.transparent,
-              collapsedBackgroundColor: Colors.transparent,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withAlpha(isDark ? 30 : 20),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${tokens.length}',
-                      style: TextStyle(
-                        color: theme.colorScheme.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Theme(
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          // Separate key while searching so entering search rebuilds the tile
+          // expanded, and leaving it restores what the user had open.
+          key: PageStorageKey(
+              '${_isSearching ? 'search' : 'group'}_$sectionId'),
+          initiallyExpanded: isExpanded,
+          enabled: !_isSearching,
+          dense: true,
+          onExpansionChanged: (expanded) {
+            final open = {...ref.read(expandedSectionsProvider)};
+            expanded ? open.add(sectionId) : open.remove(sectionId);
+            saveExpandedSections(ref, open);
+          },
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.only(bottom: 4),
+          shape: const RoundedRectangleBorder(),
+          collapsedShape: const RoundedRectangleBorder(),
+          backgroundColor: Colors.transparent,
+          collapsedBackgroundColor: Colors.transparent,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(isDark ? 30 : 20),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${tokens.length}',
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
+                ),
+              ),
+              if (!_isSearching) ...[
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  iconSize: 18,
+                  tooltip: 'Edit $name',
+                  visualDensity: VisualDensity.compact,
+                  color: theme.colorScheme.onSurface.withAlpha(130),
+                  onPressed: () => showSectionEditor(context,
+                      sectionId: sectionId, group: group),
+                ),
+                AnimatedRotation(
+                  turns: isExpanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
                     Icons.expand_more_rounded,
                     size: 20,
                     color: theme.colorScheme.onSurface.withAlpha(100),
                   ),
-                  const SizedBox(width: 8),
-                  // Explicit drag handle — buildDefaultDragHandles is off so
-                  // only this triggers a drag, leaving the tile's own
-                  // tap-to-expand gesture untouched.
-                  ReorderableDragStartListener(
-                    index: index,
-                    child: Icon(
-                      Icons.drag_indicator_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurface.withAlpha(100),
-                    ),
+                ),
+                const SizedBox(width: 8),
+                // Explicit drag handle — buildDefaultDragHandles is off so
+                // only this triggers a drag, leaving the tile's own
+                // tap-to-expand gesture untouched.
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    Icons.drag_indicator_rounded,
+                    size: 20,
+                    color: theme.colorScheme.onSurface.withAlpha(100),
                   ),
-                ],
-              ),
-              title: Row(
-                children: [
-                  leadingIcon,
-                  const SizedBox(width: 10),
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: theme.colorScheme.onSurface.withAlpha(200),
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-              children: tokens.isEmpty
-                  ? [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 16, horizontal: 20),
-                        child: Text(
-                          'No tokens in this group',
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withAlpha(80),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ]
-                  : tokens.map((t) => _buildTokenCard(t)).toList(),
-            ),
+                ),
+              ],
+            ],
           ),
+          title: Row(
+            children: [
+              leadingIcon,
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurface.withAlpha(200),
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+              // Only the All tab mixes profiles, so only it needs the label.
+              if (section.profile case final profile?) ...[
+                const SizedBox(width: 8),
+                CircleAvatar(backgroundColor: profile.color, radius: 3),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    profile.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withAlpha(130),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          children: [
+            ...shortcutRows,
+            if (tokens.isNotEmpty)
+              ..._buildSectionTokens(sectionId, tokens)
+            else if (shortcutRows.isEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                child: Text(
+                  'No tokens in this group',
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface.withAlpha(80),
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildTokenCard(Token token) {
+  /// Links to other categories that the user pinned to this section. Ids whose
+  /// category was since deleted are skipped rather than shown broken.
+  List<Widget> _buildShortcuts(ThemeData theme, String sectionId) {
+    final ids = ref.watch(sectionShortcutsProvider)[sectionId];
+    if (ids == null || ids.isEmpty) return const [];
+    final groups = ref.watch(allGroupsProvider).valueOrNull ?? const [];
+    final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
+    return [
+      for (final id in ids)
+        if (groups.firstWhereOrNull((g) => g.id == id) case final group?)
+          ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+            leading: Icon(Icons.subdirectory_arrow_right_rounded,
+                size: 18, color: theme.colorScheme.primary.withAlpha(180)),
+            title: Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                  text: '${profiles.firstWhereOrNull((p) => p.id == group.profileId)?.name ?? ''} › ',
+                  style: TextStyle(
+                      color: theme.colorScheme.onSurface.withAlpha(140)),
+                ),
+                TextSpan(
+                    text: group.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Icon(Icons.chevron_right_rounded,
+                size: 18, color: theme.colorScheme.onSurface.withAlpha(100)),
+            onTap: () => _openShortcut(group),
+          ),
+    ];
+  }
+
+  /// Goes to the category's own profile tab with the category open.
+  void _openShortcut(TokenGroup group) {
+    saveExpandedSections(
+        ref, {...ref.read(expandedSectionsProvider), group.id});
+    final index = _profiles.indexWhere((p) => p.id == group.profileId);
+    if (index >= 0) _tabController?.animateTo(index + 1);
+  }
+
+  Widget _buildTokenCard(Token token, {int? reorderIndex}) {
+    final theme = Theme.of(context);
     return TokenCard(
       key: ValueKey(token.id),
       token: token,
+      dragHandle: reorderIndex == null
+          ? null
+          : ReorderableDragStartListener(
+              index: reorderIndex,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
+                child: Icon(
+                  Icons.drag_indicator_rounded,
+                  size: 20,
+                  color: theme.colorScheme.onSurface.withAlpha(100),
+                ),
+              ),
+            ),
       onDelete: () => _deleteToken(token.id),
       onEdit: () async {
         await Navigator.push(
@@ -873,9 +1148,20 @@ class _MoveResult {
 class _SectionData {
   final TokenGroup? group;
   final List<Token> tokens;
-  const _SectionData({required this.group, required this.tokens});
+
+  /// Set on the "All" tab, which has one General per profile and labels each
+  /// section with its owner.
+  final String? id;
+  final Profile? profile;
+
+  const _SectionData({
+    required this.group,
+    required this.tokens,
+    this.id,
+    this.profile,
+  });
 
   bool get isGeneral => group == null;
   /// Stable identity for Keys/maps — independent of position.
-  String get sectionId => group?.id ?? '__general__';
+  String get sectionId => id ?? group?.id ?? '__general__';
 }

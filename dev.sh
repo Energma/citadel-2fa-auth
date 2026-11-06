@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Use the project's pinned SDK from .fvmrc; plain `flutter` may be missing or the wrong version.
+flutter() { fvm flutter "$@"; }
+
 android_build() { flutter build apk --debug; }
 ios_build() { flutter build ios --simulator --debug; }
 ios_device_build() { flutter build ios --release --no-codesign; }

@@ -6,6 +6,8 @@ import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/qr_scanner.dart';
+import '../widgets/service_icon.dart';
+import '../widgets/token_icon_picker.dart';
 
 class AddTokenScreen extends ConsumerStatefulWidget {
   final Token? editToken;
@@ -30,6 +32,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
   int _period = 30;
   String? _profileId;
   String? _groupId;
+  String? _iconPath;
   String? _error;
   bool _secretRevealed = false;
 
@@ -50,6 +53,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
       _period = t.period;
       _profileId = t.profileId;
       _groupId = t.groupId;
+      _iconPath = t.iconPath;
     }
   }
 
@@ -89,7 +93,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
         digits: t.digits,
         period: t.period,
         counter: t.counter,
-        iconPath: t.iconPath,
+        iconPath: _iconPath,
         profileId: _profileId,
         groupId: _groupId,
         tags: t.tags,
@@ -121,6 +125,7 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
         algorithm: _algorithm,
         digits: _digits,
         period: _period,
+        iconPath: _iconPath,
         profileId: _profileId,
         groupId: _groupId,
       );
@@ -258,7 +263,6 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
 
   Widget _buildManualForm(ThemeData theme) {
     final profiles = ref.watch(profileListProvider);
-    final groups = ref.watch(groupListProvider);
 
     return SingleChildScrollView(
       // Bottom padding leaves room for the system nav bar so the CTA button
@@ -269,6 +273,8 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Center(child: _buildIconPicker(theme)),
+          const SizedBox(height: 16),
           TextField(
             controller: _issuerController,
             decoration: InputDecoration(
@@ -402,7 +408,12 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
                           backgroundColor:
                               profileList.firstWhere((p) => p.id == id).color,
                           radius: 6),
-                  onSelected: (v) => setState(() => _profileId = v),
+                  onSelected: (v) => setState(() {
+                    // Groups belong to one profile, so the old one can't follow
+                    // the token to a different profile.
+                    if (v != _profileId) _groupId = null;
+                    _profileId = v;
+                  }),
                 ),
                 child: InputDecorator(
                   decoration: InputDecoration(
@@ -454,14 +465,20 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
 
           // Group selector — scoped to the selected profile so profiles with
           // same-named groups don't show each other's groups mixed together.
-          // groupListProvider follows the Home screen's active tab, not this
-          // form's own Profile field, so it can't be reused here directly.
-          (_profileId == null
-                  ? groups
-                  : ref.watch(groupsByProfileProvider(_profileId!)))
-              .when(
+          // Hidden without a profile: every group belongs to one, so offering
+          // any would file the token under a profile it isn't in.
+          if (_profileId != null)
+            ref.watch(groupsByProfileProvider(_profileId!)).when(
             data: (groupList) {
-              if (groupList.isEmpty) return const SizedBox.shrink();
+              if (groupList.isEmpty) {
+                return Text(
+                  'This profile has no groups yet.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withAlpha(140),
+                  ),
+                );
+              }
               final selected =
                   groupList.where((g) => g.id == _groupId).firstOrNull;
               return InkWell(
@@ -682,6 +699,53 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _chooseIcon() async {
+    final picked = await pickTokenIcon(
+      context,
+      issuer: _issuerController.text.trim(),
+      account: _accountController.text.trim(),
+      current: _iconPath,
+    );
+    if (picked == null) return;
+    setState(
+        () => _iconPath = picked == automaticTokenIcon ? null : picked);
+  }
+
+  Widget _buildIconPicker(ThemeData theme) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: _chooseIcon,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          children: [
+            // Follows the name fields while the icon is automatic.
+            ListenableBuilder(
+              listenable:
+                  Listenable.merge([_issuerController, _accountController]),
+              builder: (_, _) => ServiceIcon(
+                issuer: _issuerController.text.trim(),
+                account: _accountController.text.trim(),
+                iconPath: _iconPath,
+                useFavicon: false,
+                size: 56,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Change icon',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -5,6 +5,17 @@ import 'package:citadel_auth/core/models/token.dart';
 
 void main() {
   group('ImportExport - Citadel format', () {
+    test('a chosen icon survives a backup, and is optional', () {
+      final tokens = [
+        Token(issuer: 'A', account: 'a', secret: 'JBSWY3DPEHPK3PXP',
+            iconPath: 'emoji:🏦'),
+        Token(issuer: 'B', account: 'b', secret: 'JBSWY3DPEHPK3PXP'),
+      ];
+      final restored =
+          ImportExport.importFromJson(ImportExport.exportToJson(tokens));
+      expect(restored.map((t) => t.iconPath), ['emoji:🏦', null]);
+    });
+
     test('round-trip export/import preserves tokens', () {
       final tokens = [
         Token(
