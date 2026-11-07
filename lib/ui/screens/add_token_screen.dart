@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/crypto/otp_engine.dart';
@@ -388,162 +387,70 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
           ),
           const SizedBox(height: 16),
 
-          // Profile selector
+          // Profile and category as chips: every option is visible and one
+          // tap away, instead of behind a menu.
           profiles.when(
-            data: (profileList) {
-              final selected =
-                  profileList.where((p) => p.id == _profileId).firstOrNull;
-              return InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _showOptionPicker<String?>(
-                  title: 'Profile',
-                  options: [null, ...profileList.map((p) => p.id)],
-                  current: _profileId,
-                  labelOf: (id) => id == null
-                      ? 'None'
-                      : profileList.firstWhere((p) => p.id == id).name,
-                  leadingOf: (id) => id == null
-                      ? null
-                      : CircleAvatar(
-                          backgroundColor:
-                              profileList.firstWhere((p) => p.id == id).color,
-                          radius: 6),
-                  onSelected: (v) => setState(() {
-                    // Groups belong to one profile, so the old one can't follow
-                    // the token to a different profile.
-                    if (v != _profileId) _groupId = null;
-                    _profileId = v;
-                  }),
-                ),
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Profile',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withAlpha(80),
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withAlpha(60),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    floatingLabelBehavior: FloatingLabelBehavior.auto,
-                  ),
-                  child: Row(
-                    children: [
-                      if (selected != null) ...[
-                        CircleAvatar(
-                            backgroundColor: selected.color, radius: 6),
-                        const SizedBox(width: 8),
-                      ],
-                      Expanded(
-                        child: Text(selected?.name ?? 'None',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      Icon(Icons.arrow_drop_down_rounded,
-                          color: theme.colorScheme.onSurface.withAlpha(140)),
-                    ],
-                  ),
-                ),
-              );
-            },
+            data: (profileList) => _buildChoices(
+              theme,
+              label: 'Profile',
+              hint: _profileId == null
+                  ? 'Without a profile it only shows under All.'
+                  : null,
+              chips: [
+                _choice(theme,
+                    label: 'None',
+                    selected: _profileId == null,
+                    onTap: () => setState(() {
+                          _profileId = null;
+                          _groupId = null;
+                        })),
+                for (final p in profileList)
+                  _choice(theme,
+                      label: p.name,
+                      avatar: CircleAvatar(backgroundColor: p.color, radius: 5),
+                      selected: _profileId == p.id,
+                      onTap: () => setState(() {
+                            // Groups belong to one profile, so the old one
+                            // can't follow the token to a different profile.
+                            if (p.id != _profileId) _groupId = null;
+                            _profileId = p.id;
+                          })),
+              ],
+            ),
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
           ),
 
-          const SizedBox(height: 12),
-
-          // Group selector — scoped to the selected profile so profiles with
-          // same-named groups don't show each other's groups mixed together.
-          // Hidden without a profile: every group belongs to one, so offering
-          // any would file the token under a profile it isn't in.
+          // Scoped to the chosen profile, and hidden without one: every group
+          // belongs to one profile, so offering any would file the token under
+          // a profile it isn't in.
           if (_profileId != null)
             ref.watch(groupsByProfileProvider(_profileId!)).when(
-            data: (groupList) {
-              if (groupList.isEmpty) {
-                return Text(
-                  'This profile has no groups yet.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurface.withAlpha(140),
-                  ),
-                );
-              }
-              final selected =
-                  groupList.where((g) => g.id == _groupId).firstOrNull;
-              return InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _showOptionPicker<String?>(
-                  title: 'Group',
-                  options: [null, ...groupList.map((g) => g.id)],
-                  current: _groupId,
-                  labelOf: (id) => id == null
-                      ? 'None'
-                      : groupList.firstWhere((g) => g.id == id).name,
-                  leadingOf: (id) => id == null
-                      ? null
-                      : groupIcon(
-                          groupList.firstWhere((g) => g.id == id).iconName,
-                          color: theme.colorScheme.primary),
-                  onSelected: (v) => setState(() => _groupId = v),
-                ),
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Group',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withAlpha(80),
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withAlpha(60),
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                    ),
-                    floatingLabelBehavior: FloatingLabelBehavior.auto,
-                  ),
-                  child: Row(
-                    children: [
-                      if (selected != null) ...[
-                        groupIcon(selected.iconName,
-                            size: 16, color: theme.colorScheme.primary),
-                        const SizedBox(width: 8),
-                      ],
-                      Expanded(
-                        child: Text(selected?.name ?? 'None',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      Icon(Icons.arrow_drop_down_rounded,
-                          color: theme.colorScheme.onSurface.withAlpha(140)),
+                  data: (groupList) => _buildChoices(
+                    theme,
+                    label: 'Category',
+                    hint: groupList.isEmpty
+                        ? 'This profile has no groups yet.'
+                        : null,
+                    chips: [
+                      _choice(theme,
+                          label: 'General',
+                          selected: _groupId == null,
+                          onTap: () => setState(() => _groupId = null)),
+                      for (final g in groupList)
+                        _choice(theme,
+                            label: g.name,
+                            avatar: groupIcon(g.iconName,
+                                size: 16, color: theme.colorScheme.primary),
+                            selected: _groupId == g.id,
+                            onTap: () => setState(() => _groupId = g.id)),
                     ],
                   ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
-              );
-            },
-            loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
-          ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 4),
 
           // Advanced settings
           Container(
@@ -819,6 +726,51 @@ class _AddTokenScreenState extends ConsumerState<AddTokenScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChoices(
+    ThemeData theme, {
+    required String label,
+    required List<Widget> chips,
+    String? hint,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurface.withAlpha(170))),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: chips),
+          if (hint != null) ...[
+            const SizedBox(height: 6),
+            Text(hint,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurface.withAlpha(140),
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _choice(
+    ThemeData theme, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    Widget? avatar,
+  }) {
+    return ChoiceChip(
+      label: Text(label),
+      avatar: avatar,
+      selected: selected,
+      showCheckmark: false,
+      onSelected: (_) => onTap(),
     );
   }
 

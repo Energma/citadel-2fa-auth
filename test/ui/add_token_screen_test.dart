@@ -194,11 +194,10 @@ void main() {
           find.widgetWithText(TextField, 'Account *'), 'renamed@test.com');
       await tester.pump();
 
-      // Profile: Work -> None.
-      await tester.ensureVisible(find.text('Work'));
-      await tester.tap(find.text('Work'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('None').last);
+      // Profile: Work -> None, one tap on its chip.
+      expect(find.widgetWithText(ChoiceChip, 'Main'), findsOneWidget);
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'None'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'None'));
       await tester.pumpAndSettle();
 
       // A group can't exist without its profile, so it goes too.
@@ -248,16 +247,14 @@ void main() {
             TokenGroup(id: 'g2', profileId: 'p2', name: 'Family'),
           ]);
 
-      await tester.tap(find.text('Work'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Home').last);
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Home'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Home'));
       await tester.pumpAndSettle();
 
       expect(find.text('Main'), findsNothing);
 
-      await tester.tap(find.text('None').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Family').last);
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Family'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Family'));
       await tester.pumpAndSettle();
       await save(tester);
 
