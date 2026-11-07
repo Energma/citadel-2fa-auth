@@ -75,10 +75,16 @@ class ImportExport {
         period: m['period'] as int? ?? 30,
         counter: m['counter'] as int? ?? 0,
         tags: (m['tags'] as List?)?.cast<String>() ?? const [],
-        iconPath: m['icon'] as String?,
+        iconPath: _boundedIcon(m['icon']),
       );
     }).toList();
   }
+
+  /// An icon is a short tag or a small picture; anything bigger than a
+  /// picture could be (base64 of 64 KB, plus slack) isn't one, so it is
+  /// dropped rather than bloating the vault.
+  static String? _boundedIcon(Object? icon) =>
+      icon is String && icon.length <= 100 * 1024 ? icon : null;
 
   static List<Token> _importAegis(Map<String, dynamic> data) {
     final db = data['db'] as Map<String, dynamic>;

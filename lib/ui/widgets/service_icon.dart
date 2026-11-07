@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -29,8 +31,37 @@ class ServiceIcon extends StatelessWidget {
   static const _servicePrefix = 'service:';
   static const _emojiPrefix = 'emoji:';
 
+  static const _imagePrefix = 'image:';
+
+  /// A picture the user chose, kept inside the encrypted vault rather than as
+  /// a loose file, so it travels with backups and never reveals the service.
+  static const maxImageBytes = 64 * 1024;
+
   static String iconForService(String service) => '$_servicePrefix$service';
   static String iconForEmoji(String emoji) => '$_emojiPrefix$emoji';
+  static String iconForImage(Uint8List bytes) =>
+      '$_imagePrefix${base64.encode(bytes)}';
+  static bool isImage(String? iconPath) =>
+      iconPath?.startsWith(_imagePrefix) ?? false;
+
+  // Cards rebuild every second; decoding base64 each time would waste work and
+  // a fresh MemoryImage would also defeat Flutter's image cache.
+  static final _images = <String, MemoryImage?>{};
+
+  static MemoryImage? _imageFor(String iconPath) {
+    if (_images.containsKey(iconPath)) return _images[iconPath];
+    MemoryImage? image;
+    try {
+      final bytes = base64.decode(iconPath.substring(_imagePrefix.length));
+      if (bytes.isNotEmpty && bytes.length <= maxImageBytes) {
+        image = MemoryImage(bytes);
+      }
+    } on FormatException {
+      image = null;
+    }
+    if (_images.length >= 64) _images.remove(_images.keys.first);
+    return _images[iconPath] = image;
+  }
 
   /// Every service the picker can offer, alphabetically.
   static List<String> get pickableServices =>
@@ -52,6 +83,10 @@ class ServiceIcon extends StatelessWidget {
       if (chosen.startsWith(_emojiPrefix) &&
           chosen.length > _emojiPrefix.length) {
         return _buildEmojiIcon(theme, chosen.substring(_emojiPrefix.length));
+      }
+      if (chosen.startsWith(_imagePrefix)) {
+        final image = _imageFor(chosen);
+        if (image != null) return _buildImageIcon(theme, image, name);
       }
       if (chosen.startsWith(_servicePrefix)) {
         final icon =
@@ -81,6 +116,21 @@ class ServiceIcon extends StatelessWidget {
     }
     final iconData = _knownIcons[service];
     return iconData == null ? null : _buildKnownIcon(theme, iconData);
+  }
+
+  Widget _buildImageIcon(ThemeData theme, MemoryImage image, String name) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.32),
+      child: Image(
+        image: image,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        // Bytes that aren't a picture (a hand-edited backup) get the letter.
+        errorBuilder: (_, _, _) => _buildLetterAvatar(theme, name),
+      ),
+    );
   }
 
   Widget _buildEmojiIcon(ThemeData theme, String emoji) {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'group_icon.dart';
 import 'service_icon.dart';
 
@@ -59,10 +61,37 @@ class _TokenIconSheetState extends State<_TokenIconSheet> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      // Shrunk on the device before we see it: an icon never needs more, and
+      // the result is stored in the vault with the token.
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 128,
+        maxHeight: 128,
+        imageQuality: 85,
+      );
+      if (file == null || !mounted) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > ServiceIcon.maxImageBytes) {
+        messenger.showSnackBar(
+            const SnackBar(content: Text('That image is too large to use')));
+        return;
+      }
+      if (mounted) Navigator.pop(context, ServiceIcon.iconForImage(bytes));
+    } on PlatformException {
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Could not open your photos')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final media = MediaQuery.of(context);
+    final current = widget.current;
+    final hasImage = ServiceIcon.isImage(current);
     final matches = _matches;
 
     return Padding(
@@ -107,6 +136,26 @@ class _TokenIconSheetState extends State<_TokenIconSheet> {
               ),
               title: const Text('Choose an emoji'),
               onTap: _pickEmoji,
+            ),
+            ListTile(
+              leading: hasImage
+                  ? ServiceIcon(
+                      issuer: widget.issuer,
+                      account: widget.account,
+                      iconPath: current,
+                      size: 36,
+                    )
+                  : SizedBox(
+                      width: 36,
+                      child: Icon(Icons.image_outlined,
+                          color: theme.colorScheme.primary),
+                    ),
+              title: Text(hasImage ? 'Change image' : 'Choose an image'),
+              subtitle: const Text('From your photos'),
+              trailing: hasImage
+                  ? Icon(Icons.check_rounded, color: theme.colorScheme.primary)
+                  : null,
+              onTap: _pickImage,
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
