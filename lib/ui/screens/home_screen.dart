@@ -5,6 +5,7 @@ import '../../core/models/all_view_layout.dart';
 import '../../core/models/profile.dart';
 import '../../core/models/token.dart';
 import '../../core/providers.dart';
+import '../widgets/citadel_logo.dart';
 import '../widgets/token_card.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
@@ -188,11 +189,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset(
-            'assets/logo/citadel-logo.png',
-            width: 32,
-            height: 32,
-          ),
+          CitadelLogo(size: 32),
           const SizedBox(width: 10),
           Text(
             'Citadel',
@@ -1126,11 +1123,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 scale: value,
                 child: child,
               ),
-              child: Image.asset(
-                'assets/logo/citadel-logo.png',
-                width: 96,
-                height: 96,
-              ),
+              child: CitadelLogo(size: 96),
             ),
             const SizedBox(height: 24),
             Text(

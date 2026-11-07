@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
+import '../widgets/citadel_logo.dart';
 import '../widgets/pin_input.dart';
 
 /// The one unlock method the screen is currently showing. Exactly one primary
@@ -364,7 +365,7 @@ class _LockScreenState extends ConsumerState<LockScreen> {
   /// between them doesn't visually reflow the top of the screen.
   List<Widget> _buildHeader(ThemeData theme, String subtitle) {
     return [
-      Image.asset('assets/logo/citadel-logo.png', width: 72, height: 72),
+      CitadelLogo(size: 72),
       const SizedBox(height: 16),
       Text(
         'Citadel Auth',

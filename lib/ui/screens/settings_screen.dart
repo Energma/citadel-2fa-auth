@@ -12,6 +12,7 @@ import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
 import '../../ui/theme/app_theme.dart';
 import '../../ui/theme/palette.dart';
+import '../widgets/citadel_logo.dart';
 import '../widgets/master_password_dialog.dart';
 import 'pin_setup_screen.dart';
 import 'vault_deleted_screen.dart';
@@ -92,11 +93,7 @@ class SettingsScreen extends ConsumerWidget {
 
           _sectionHeader(theme, 'About'),
           ListTile(
-            leading: Image.asset(
-              'assets/logo/citadel-logo.png',
-              width: 24,
-              height: 24,
-            ),
+            leading: CitadelLogo(size: 24),
             title: const Text('Citadel Auth'),
             subtitle: Text(
               ref.watch(appVersionProvider).maybeWhen(
