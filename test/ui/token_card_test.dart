@@ -23,6 +23,23 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('swiping offers only Delete', (tester) async {
+    var deletes = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: TokenCard(token: _token, onEdit: () {}, onDelete: () => deletes++),
+      ),
+    ));
+
+    await tester.drag(find.byType(TokenCard), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit'), findsNothing);
+    await tester.tap(find.text('Delete'));
+    expect(deletes, 1);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('no pencil when the card cannot be edited', (tester) async {
     await _pump(tester);
     expect(find.byTooltip('Edit token'), findsNothing);

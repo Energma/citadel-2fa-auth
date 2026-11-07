@@ -8,7 +8,8 @@ import '../../core/providers.dart';
 import '../widgets/token_card.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
-import '../widgets/section_editor_sheet.dart';
+import '../widgets/move_tokens_sheet.dart';
+import '../widgets/service_icon.dart';
 import 'add_token_screen.dart';
 import 'all_view_editor_screen.dart';
 import 'settings_screen.dart';
@@ -397,17 +398,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       padding: const EdgeInsets.only(right: 12),
       child: IconButton(
         icon: Icon(
-          Icons.add_rounded,
+          Icons.edit_outlined,
           size: 20,
           color: theme.colorScheme.onSurface.withAlpha(120),
         ),
-        tooltip: 'Manage profiles & groups',
+        tooltip: 'Edit profiles & groups',
+        // From a profile's tab, straight to that profile's groups and tokens.
         onPressed: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          MaterialPageRoute(
+            builder: (_) => ProfileScreen(
+                initialProfileId: ref.read(activeProfileIdProvider)),
+          ),
         ).then((_) {
           ref.invalidate(profileListProvider);
           ref.invalidate(groupListProvider);
+          // Tokens may have moved between groups there.
+          ref.invalidate(tokenListProvider);
         }),
         style: IconButton.styleFrom(
           padding: const EdgeInsets.all(8),
@@ -470,13 +477,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ?.generalSortOrder ??
         -1;
 
-    // Same id the All tab uses, so this General's open state and shortcuts
-    // carry over between the two.
-    final generalId = AllViewSection.generalId(activeProfileId);
-    final shortcuts = ref.watch(sectionShortcutsProvider);
+    // Same id the All tab uses, so this General's open state carries over
+    // between the two.
     final sections = <_SectionData>[
-      if (ungrouped.isNotEmpty || (shortcuts[generalId]?.isNotEmpty ?? false))
-        _SectionData(group: null, tokens: ungrouped, id: generalId),
+      if (ungrouped.isNotEmpty)
+        _SectionData(
+            group: null,
+            tokens: ungrouped,
+            id: AllViewSection.generalId(activeProfileId)),
       for (final group in orderedGroups)
         _SectionData(group: group, tokens: grouped[group.id] ?? []),
     ];
@@ -517,7 +525,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       List<TokenGroup> groups) {
     final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
     final layout = ref.watch(allViewLayoutProvider);
-    final shortcuts = ref.watch(sectionShortcutsProvider);
     final all = buildAllViewSections(profiles, groups);
     final tokensById = assignTokensToSections(tokenList, all);
 
@@ -526,9 +533,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         // A General with nothing in it is noise; an empty group is structure
         // the user created, so it stays.
         if (layout.isVisible(section.id) &&
-            (!section.isGeneral ||
-                tokensById.containsKey(section.id) ||
-                (shortcuts[section.id]?.isNotEmpty ?? false)))
+            (!section.isGeneral || tokensById.containsKey(section.id)))
           _SectionData(
             id: section.id,
             group: section.group,
@@ -661,20 +666,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return [for (final id in override) byId[id]!];
   }
 
-  Future<void> _reorderTokens(String sectionId, List<Token> tokens,
-      int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex--;
-    if (newIndex == oldIndex) return;
-    final reordered = List<Token>.from(tokens);
-    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+  /// Puts [token] into [section] next to [target] (after it when [after]),
+  /// or last when [target] is null. One drag covers both jobs: reordering
+  /// within a section and moving to another profile or category.
+  Future<void> _placeToken(Token token, _SectionData section,
+      {Token? target, bool after = false}) async {
+    if (token.id == target?.id) return;
+    final sectionId = section.sectionId;
+    final order = _displayTokens(sectionId, section.tokens)
+        .where((t) => t.id != token.id)
+        .toList();
+    var at = target == null
+        ? order.length
+        : order.indexWhere((t) => t.id == target.id);
+    if (at < 0) at = order.length;
+    if (target != null && after) at++;
+    order.insert(at, token);
 
-    setState(() {
-      _optimisticTokenOrder[sectionId] = reordered.map((t) => t.id).toList();
-    });
-
+    final moving = !section.tokens.any((t) => t.id == token.id);
+    // Same section: show the new order now and hold it until it's saved.
+    // Another section: the token disappears from its old place on refresh.
+    if (!moving) {
+      setState(() {
+        _optimisticTokenOrder[sectionId] = order.map((t) => t.id).toList();
+      });
+    }
     try {
+      if (moving) {
+        final to = _destinationOf(section);
+        await _moveToken(token, to.profileId, to.groupId, refresh: false);
+      }
       await ref.read(tokenRepositoryProvider).updateSortOrders({
-        for (var i = 0; i < reordered.length; i++) reordered[i].id: i,
+        for (var i = 0; i < order.length; i++) order[i].id: i,
       });
       final _ = await ref.refresh(tokenListProvider.future);
     } finally {
@@ -683,29 +706,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  /// The section's cards, draggable by their handle. Search results are a
-  /// filtered subset, so numbering them would overwrite the saved order of
-  /// everything else — they render as a plain, fixed list instead.
-  List<Widget> _buildSectionTokens(String sectionId, List<Token> tokens) {
+  /// Which token the dragged card is over, and whether it would land after it.
+  ({String id, bool after})? _dropHint;
+
+  /// The section's cards. Each is also a drop spot: the top half of a card
+  /// places the dragged one before it, the bottom half after it. Search
+  /// results are a filtered subset, so they stay a plain, fixed list.
+  List<Widget> _buildSectionTokens(_SectionData section, List<Token> tokens) {
     if (_isSearching) return tokens.map((t) => _buildTokenCard(t)).toList();
+    final theme = Theme.of(context);
+    Widget line(bool show) => AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          height: show ? 3 : 0,
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        );
+    bool afterHalf(BuildContext target, Offset pointer) {
+      final box = target.findRenderObject() as RenderBox?;
+      if (box == null) return false;
+      return box.globalToLocal(pointer).dy > box.size.height / 2;
+    }
+
     return [
-      ReorderableListView.builder(
-        // Without its own key this list's scroll position shares a PageStorage
-        // slot with the enclosing ExpansionTile's saved bool, and throws on the
-        // type mismatch when the section opens.
-        key: PageStorageKey('tokens_$sectionId'),
-        shrinkWrap: true,
-        primary: false,
-        physics: const NeverScrollableScrollPhysics(),
-        buildDefaultDragHandles: false,
-        itemCount: tokens.length,
-        onReorder: (oldIndex, newIndex) =>
-            _reorderTokens(sectionId, tokens, oldIndex, newIndex),
-        itemBuilder: (context, index) => _buildTokenCard(
-          tokens[index],
-          reorderIndex: tokens.length > 1 ? index : null,
+      for (final token in tokens)
+        Builder(
+          key: ValueKey('drop_${token.id}'),
+          builder: (target) => DragTarget<Token>(
+            onWillAcceptWithDetails: (d) => d.data.id != token.id,
+            onMove: (d) {
+              final hint = (id: token.id, after: afterHalf(target, d.offset));
+              if (hint != _dropHint) setState(() => _dropHint = hint);
+            },
+            onLeave: (_) {
+              if (_dropHint?.id == token.id) setState(() => _dropHint = null);
+            },
+            onAcceptWithDetails: (d) {
+              final after = afterHalf(target, d.offset);
+              setState(() => _dropHint = null);
+              _placeToken(d.data, section, target: token, after: after);
+            },
+            builder: (context, hovering, _) {
+              final hint = hovering.isNotEmpty && _dropHint?.id == token.id
+                  ? _dropHint
+                  : null;
+              return Column(children: [
+                line(hint != null && !hint.after),
+                _buildTokenCard(token),
+                line(hint != null && hint.after),
+              ]);
+            },
+          ),
         ),
-      ),
     ];
   }
 
@@ -725,9 +779,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final leadingIcon = isGeneral
         ? Icon(Icons.apps_rounded, size: 18, color: leadingIconColor)
         : groupIcon(group.iconName, size: 18, color: leadingIconColor);
-    final shortcutRows =
-        _isSearching ? <Widget>[] : _buildShortcuts(theme, sectionId);
 
+    return DragTarget<Token>(
+      // Dropping on the header moves a token here from elsewhere, last in
+      // line. Within a section the cards place it, so letting go over its
+      // own section isn't a drop, and opens the move sheet instead.
+      onWillAcceptWithDetails: (d) =>
+          !section.tokens.any((t) => t.id == d.data.id),
+      onAcceptWithDetails: (d) => _placeToken(d.data, section),
+      builder: (context, hovering, _) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: hovering.isNotEmpty
+                ? theme.colorScheme.primary
+                : Colors.transparent,
+            width: 2,
+          ),
+          color: hovering.isNotEmpty
+              ? theme.colorScheme.primary.withAlpha(20)
+              : Colors.transparent,
+        ),
+        child: _buildSectionBody(theme, isDark, section, tokens, index,
+            name: name,
+            leadingIcon: leadingIcon,
+            isExpanded: isExpanded),
+      ),
+    );
+  }
+
+  Widget _buildSectionBody(ThemeData theme, bool isDark, _SectionData section,
+      List<Token> tokens, int index,
+      {required String name,
+      required Widget leadingIcon,
+      required bool isExpanded}) {
+    final sectionId = section.sectionId;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Theme(
@@ -770,15 +857,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               ),
               if (!_isSearching) ...[
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  iconSize: 18,
-                  tooltip: 'Edit $name',
-                  visualDensity: VisualDensity.compact,
-                  color: theme.colorScheme.onSurface.withAlpha(130),
-                  onPressed: () => showSectionEditor(context,
-                      sectionId: sectionId, group: group),
-                ),
                 AnimatedRotation(
                   turns: isExpanded ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
@@ -840,10 +918,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
           ),
           children: [
-            ...shortcutRows,
             if (tokens.isNotEmpty)
-              ..._buildSectionTokens(sectionId, tokens)
-            else if (shortcutRows.isEmpty)
+              ..._buildSectionTokens(section, tokens)
+            else
               Padding(
                 padding:
                     const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -861,69 +938,100 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
-  /// Links to other categories that the user pinned to this section. Ids whose
-  /// category was since deleted are skipped rather than shown broken.
-  List<Widget> _buildShortcuts(ThemeData theme, String sectionId) {
-    final ids = ref.watch(sectionShortcutsProvider)[sectionId];
-    if (ids == null || ids.isEmpty) return const [];
-    final groups = ref.watch(allGroupsProvider).valueOrNull ?? const [];
-    final profiles = ref.watch(profileListProvider).valueOrNull ?? _profiles;
-    return [
-      for (final id in ids)
-        if (groups.firstWhereOrNull((g) => g.id == id) case final group?)
-          ListTile(
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-            leading: Icon(Icons.subdirectory_arrow_right_rounded,
-                size: 18, color: theme.colorScheme.primary.withAlpha(180)),
-            title: Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                  text: '${profiles.firstWhereOrNull((p) => p.id == group.profileId)?.name ?? ''} › ',
-                  style: TextStyle(
-                      color: theme.colorScheme.onSurface.withAlpha(140)),
-                ),
-                TextSpan(
-                    text: group.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-              ]),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Icon(Icons.chevron_right_rounded,
-                size: 18, color: theme.colorScheme.onSurface.withAlpha(100)),
-            onTap: () => _openShortcut(group),
-          ),
-    ];
-  }
+  /// Where the finger went down, to tell a drag from a press-and-release.
+  Offset? _pointerDown;
 
-  /// Goes to the category's own profile tab with the category open.
-  void _openShortcut(TokenGroup group) {
-    saveExpandedSections(
-        ref, {...ref.read(expandedSectionsProvider), group.id});
-    final index = _profiles.indexWhere((p) => p.id == group.profileId);
-    if (index >= 0) _tabController?.animateTo(index + 1);
-  }
-
-  Widget _buildTokenCard(Token token, {int? reorderIndex}) {
+  /// What follows the finger while a card is dragged.
+  Widget _dragFeedback(Token token) {
     final theme = Theme.of(context);
+    return Transform.translate(
+      offset: const Offset(-40, -28),
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: MediaQuery.of(context).size.width - 48,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.primary, width: 1.5),
+            boxShadow: const [BoxShadow(blurRadius: 16, color: Colors.black38)],
+          ),
+          child: Row(children: [
+            ServiceIcon(
+              issuer: token.issuer,
+              account: token.account,
+              iconPath: token.iconPath,
+              size: 32,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                token.issuer.isEmpty ? token.account : token.issuer,
+                style: theme.textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// A card can be picked up two ways: right away by its handle, or by
+  /// holding it anywhere. Drop it on a card or a section to place it there.
+  /// Holding and letting go without moving opens the move sheet instead,
+  /// which also reaches sections scrolled out of view.
+  Widget _buildTokenCard(Token token) {
+    if (_isSearching) return _buildTokenCardBody(token);
+    final theme = Theme.of(context);
+    final handle = Draggable<Token>(
+      data: token,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _dragFeedback(token),
+      onDragEnd: (_) => _clearDropHint(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
+        child: Icon(
+          Icons.drag_indicator_rounded,
+          size: 20,
+          color: theme.colorScheme.onSurface.withAlpha(100),
+        ),
+      ),
+    );
+    final card = _buildTokenCardBody(token, dragHandle: handle);
+    return Listener(
+      key: ValueKey('drag_${token.id}'),
+      onPointerDown: (e) => _pointerDown = e.position,
+      child: LongPressDraggable<Token>(
+        data: token,
+        hapticFeedbackOnStart: true,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        onDragEnd: (details) {
+          _clearDropHint();
+          final down = _pointerDown;
+          if (!details.wasAccepted &&
+              down != null &&
+              (details.offset - down).distance < 24) {
+            _showMoveDialog(token);
+          }
+        },
+        feedback: _dragFeedback(token),
+        childWhenDragging: Opacity(opacity: 0.35, child: card),
+        child: card,
+      ),
+    );
+  }
+
+  void _clearDropHint() {
+    if (_dropHint != null && mounted) setState(() => _dropHint = null);
+  }
+
+  Widget _buildTokenCardBody(Token token, {Widget? dragHandle}) {
     return TokenCard(
       key: ValueKey(token.id),
       token: token,
-      dragHandle: reorderIndex == null
-          ? null
-          : ReorderableDragStartListener(
-              index: reorderIndex,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
-                child: Icon(
-                  Icons.drag_indicator_rounded,
-                  size: 20,
-                  color: theme.colorScheme.onSurface.withAlpha(100),
-                ),
-              ),
-            ),
+      dragHandle: dragHandle,
       onDelete: () => _deleteToken(token.id),
       onEdit: () async {
         await Navigator.push(
@@ -943,136 +1051,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               return token.copyWith(counter: token.counter + 1);
             }
           : null,
-      onMoveToProfile: () => _showMoveDialog(token),
+      // While searching there is no drag; long-press opens the move sheet.
+      onMoveToProfile: _isSearching ? () => _showMoveDialog(token) : null,
     );
   }
 
-  void _showMoveDialog(Token token) async {
-    final profiles = _profiles;
-    final groups = ref.read(groupListProvider).valueOrNull ?? [];
-
-    final result = await showModalBottomSheet<_MoveResult>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withAlpha(40),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Flexible(
-                  child: ConstrainedBox(
-                    // Caps visible rows at 6 — with more options than that,
-                    // the list scrolls instead of overflowing the sheet.
-                    constraints: const BoxConstraints(maxHeight: 6 * 56.0),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        // Profile section
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text(
-                            'Profile',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        ListTile(
-                          leading: const Icon(Icons.remove_circle_outline,
-                              size: 20),
-                          title: const Text('None'),
-                          dense: true,
-                          selected: token.profileId == null,
-                          onTap: () => Navigator.pop(
-                              ctx, _MoveResult(profileId: '__none__')),
-                        ),
-                        ...profiles.map((p) => ListTile(
-                              leading: CircleAvatar(
-                                  backgroundColor: p.color, radius: 8),
-                              title: Text(p.name),
-                              dense: true,
-                              selected: token.profileId == p.id,
-                              onTap: () => Navigator.pop(
-                                  ctx, _MoveResult(profileId: p.id)),
-                            )),
-
-                        if (groups.isNotEmpty) ...[
-                          const Divider(height: 20),
-                          // Group section
-                          Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(
-                              'Group',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          ListTile(
-                            leading: const Icon(Icons.remove_circle_outline,
-                                size: 20),
-                            title: const Text('None'),
-                            dense: true,
-                            selected: token.groupId == null,
-                            onTap: () => Navigator.pop(
-                                ctx, _MoveResult(groupId: '__none__')),
-                          ),
-                          ...groups.map((g) => ListTile(
-                                leading: groupIcon(g.iconName,
-                                    size: 20, color: theme.colorScheme.primary),
-                                title: Text(g.name),
-                                dense: true,
-                                selected: token.groupId == g.id,
-                                onTap: () => Navigator.pop(
-                                    ctx, _MoveResult(groupId: g.id)),
-                              )),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (result == null) return;
+  /// Puts [token] in a profile and category together. They are always set as a
+  /// pair: a category belongs to one profile, so setting only one of them
+  /// would leave the token filed under a category its profile doesn't have.
+  Future<void> _moveToken(Token token, String? profileId, String? groupId,
+      {bool refresh = true}) async {
+    if (token.profileId == profileId && token.groupId == groupId) return;
     final repo = ref.read(tokenRepositoryProvider);
+    await repo.updateProfile(token.id, profileId);
+    await repo.updateGroup(token.id, groupId);
+    if (refresh) ref.invalidate(tokenListProvider);
+  }
 
-    if (result.profileId != null) {
-      final pid = result.profileId == '__none__' ? null : result.profileId;
-      await repo.updateProfile(token.id, pid);
+  /// Where a token dropped on [section] goes.
+  TokenDestination _destinationOf(_SectionData section) {
+    final group = section.group;
+    if (group != null) return (profileId: group.profileId, groupId: group.id);
+    if (section.profile != null) return (profileId: section.profile!.id, groupId: null);
+    if (section.sectionId == AllViewSection.generalId(null)) {
+      return (profileId: null, groupId: null);
     }
-    if (result.groupId != null) {
-      final gid = result.groupId == '__none__' ? null : result.groupId;
-      await repo.updateGroup(token.id, gid);
-    }
-    ref.invalidate(tokenListProvider);
+    return (profileId: ref.read(activeProfileIdProvider), groupId: null);
+  }
+
+  void _showMoveDialog(Token token) async {
+    // Nothing else watches every profile's groups, so they may not be loaded.
+    final groups = await ref.read(allGroupsProvider.future);
+    if (!mounted) return;
+    final to = await pickTokenDestination(
+      context,
+      title: 'Move ${token.issuer.isEmpty ? token.account : token.issuer} to',
+      profiles: _profiles,
+      groups: groups,
+      current: (profileId: token.profileId, groupId: token.groupId),
+    );
+    if (to == null) return;
+    await _moveToken(token, to.profileId, to.groupId);
   }
 
   Future<void> _openAddToken() async {
@@ -1135,12 +1154,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       ),
     );
   }
-}
-
-class _MoveResult {
-  final String? profileId;
-  final String? groupId;
-  _MoveResult({this.profileId, this.groupId});
 }
 
 /// One collapsible section on the Home screen: either the synthetic

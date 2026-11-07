@@ -14,15 +14,10 @@ import 'package:citadel_auth/ui/theme/app_theme.dart';
 
 class _FakeKeystore extends KeystoreService {
   String? stored;
-  Map<String, List<String>>? shortcuts;
   Set<String>? expanded;
 
   @override
   Future<void> storeAllViewLayout(String json) async => stored = json;
-
-  @override
-  Future<void> storeSectionShortcuts(Map<String, List<String>> value) async =>
-      shortcuts = value;
 
   @override
   Future<void> storeExpandedSections(Set<String> ids) async => expanded = ids;
@@ -160,82 +155,12 @@ void main() {
     expect(keystore.stored, isNull, reason: 'must not touch the All layout');
   });
 
-  testWidgets('a category pencil adds a shortcut to another profile',
+  testWidgets('sections have no pencil; editing is per profile',
       (tester) async {
-    final keystore = _FakeKeystore();
-    await _pump(tester, const HomeScreen(), [
-      ..._overrides(keystore, activeProfile: 'p1'),
-      profileRepositoryProvider.overrideWithValue(_FakeProfileRepository()),
-    ]);
-
-    await tester.tap(find.byTooltip('Edit Banks'));
-    await tester.pumpAndSettle();
-    // A category can't link to itself.
-    expect(find.widgetWithText(CheckboxListTile, 'Banks'), findsNothing);
-    await tester.tap(find.widgetWithText(CheckboxListTile, 'Dev'));
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-
-    expect(keystore.shortcuts, {
-      'g1': ['g2'],
-    });
-    await tester.tap(find.text('Banks'));
-    await tester.pumpAndSettle();
-    expect(find.text('Work › Dev'), findsOneWidget);
-  });
-
-  testWidgets('a category pencil renames the category', (tester) async {
-    final repo = _FakeProfileRepository();
-    await _pump(tester, const HomeScreen(), [
-      ..._overrides(_FakeKeystore(), activeProfile: 'p1'),
-      profileRepositoryProvider.overrideWithValue(repo),
-    ]);
-
-    await tester.tap(find.byTooltip('Edit Banks'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Banks'), 'Bills');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-
-    expect(repo.updatedGroup?.id, 'g1');
-    expect(repo.updatedGroup?.name, 'Bills');
-  });
-
-  testWidgets('General with only shortcuts still shows, and a shortcut opens '
-      'its category on its own tab', (tester) async {
-    final keystore = _FakeKeystore();
-    late ProviderContainer container;
-    await _pump(
-        tester,
-        Consumer(builder: (context, ref, _) {
-          container = ProviderScope.containerOf(context);
-          return const HomeScreen();
-        }),
-        [
-          ..._overrides(keystore, activeProfile: 'p1'),
-          sectionShortcutsProvider.overrideWith((ref) => {
-                AllViewSection.generalId('p1'): ['g2'],
-              }),
-        ]);
-
-    await tester.tap(find.text('General'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Work › Dev'));
-    await tester.pumpAndSettle();
-
-    expect(container.read(activeProfileIdProvider), 'p2');
-    expect(keystore.expanded, contains('g2'));
-  });
-
-  testWidgets('a shortcut to a deleted category is left out', (tester) async {
-    await _pump(tester, const HomeScreen(), [
-      ..._overrides(_FakeKeystore(), activeProfile: 'p1'),
-      sectionShortcutsProvider.overrideWith((ref) => {
-            'g1': ['gone', 'g2'],
-          }),
-    ]);
-    await tester.tap(find.text('Banks'));
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.subdirectory_arrow_right_rounded), findsOneWidget);
+    await _pump(tester, const HomeScreen(),
+        _overrides(_FakeKeystore(), activeProfile: 'p1'));
+    expect(find.text('Banks'), findsOneWidget);
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    expect(find.byTooltip('Edit profiles & groups'), findsOneWidget);
   });
 }

@@ -20,7 +20,6 @@ class KeystoreService {
   static const _customTextColorKey = 'citadel_custom_text_color';
   static const _allViewLayoutKey = 'citadel_all_view_layout';
   static const _expandedSectionsKey = 'citadel_expanded_sections';
-  static const _sectionShortcutsKey = 'citadel_section_shortcuts';
   static const _pinHashKey = 'citadel_pin_hash'; // legacy, cleared on disable
   static const _pinEnabledKey = 'citadel_pin_enabled';
   static const _pinAttemptsKey = 'citadel_pin_attempts';
@@ -244,28 +243,6 @@ class KeystoreService {
     if (stored == null) return {};
     try {
       return (json.decode(stored) as List).whereType<String>().toSet();
-    } catch (_) {
-      return {};
-    }
-  }
-
-  /// Store each Home section's shortcuts: section id -> group ids, in order.
-  Future<void> storeSectionShortcuts(Map<String, List<String>> shortcuts) async {
-    await _storage.write(
-        key: _sectionShortcutsKey, value: json.encode(shortcuts));
-  }
-
-  /// A malformed value only costs the shortcuts, never the Home screen.
-  Future<Map<String, List<String>>> getSectionShortcuts() async {
-    final stored = await _storage.read(key: _sectionShortcutsKey);
-    if (stored == null) return {};
-    try {
-      return {
-        for (final entry in (json.decode(stored) as Map).entries)
-          if (entry.key is String && entry.value is List)
-            entry.key as String:
-                (entry.value as List).whereType<String>().toList(),
-      };
     } catch (_) {
       return {};
     }

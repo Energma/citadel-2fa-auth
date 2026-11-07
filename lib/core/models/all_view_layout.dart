@@ -14,8 +14,10 @@ class AllViewSection {
   bool get isGeneral => group == null;
   String get name => group?.name ?? 'General';
 
+  static const _generalPrefix = '__general__:';
+
   static String generalId(String? profileId) =>
-      '__general__:${profileId ?? 'none'}';
+      '$_generalPrefix${profileId ?? 'none'}';
 }
 
 /// Every possible section in default order: profile by profile, General first.

@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
 import '../../core/models/profile.dart';
+import '../../core/models/token.dart';
 import '../../core/providers.dart';
 import '../theme/palette.dart';
 import '../widgets/group_icon.dart';
 import '../widgets/master_password_dialog.dart';
+import '../widgets/service_icon.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
-  const ProfileScreen({super.key});
+  /// Opens straight on this profile's groups, e.g. from its Home tab.
+  final String? initialProfileId;
+
+  const ProfileScreen({super.key, this.initialProfileId});
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -17,12 +22,16 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  String? _selectedProfileIdForGroups;
+  late String? _selectedProfileIdForGroups = widget.initialProfileId;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialProfileId == null ? 0 : 1,
+    );
   }
 
   @override
@@ -496,10 +505,29 @@ class _GroupTab extends ConsumerWidget {
         profileList.firstWhereOrNull((p) => p.id == profileId);
     if (profile == null) return const SizedBox.shrink();
 
+    final tokens =
+        ref.watch(tokensByProfileProvider(profileId)).valueOrNull ?? const [];
+
     return ref.watch(groupsByProfileProvider(profileId)).when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
       data: (list) {
+        final groupIds = list.map((g) => g.id).toSet();
+        List<Token> tokensIn(String? groupId) => tokens
+            .where((t) => groupId == null
+                // A token pointing at a deleted group is in General.
+                ? !groupIds.contains(t.groupId)
+                : t.groupId == groupId)
+            .sortedBy<num>((t) => t.sortOrder);
+        final general = _GroupTokens(
+          title: 'General',
+          icon: Icon(Icons.apps_rounded, color: theme.colorScheme.primary),
+          tokens: tokensIn(null),
+          tokensIn: tokensIn,
+          groups: list,
+          profileId: profileId,
+        );
+
         return Column(
           children: [
             Padding(
@@ -514,74 +542,68 @@ class _GroupTab extends ConsumerWidget {
                 ),
               ),
             ),
-            if (list.isEmpty)
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.folder_outlined,
-                          size: 48,
-                          color: theme.colorScheme.onSurface.withAlpha(60)),
-                      const SizedBox(height: 12),
-                      Text('No groups in ${profile.name}',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color:
-                                theme.colorScheme.onSurface.withAlpha(100),
-                          )),
-                      const SizedBox(height: 4),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 48),
+            Expanded(
+              child: ReorderableListView.builder(
+                padding: EdgeInsets.fromLTRB(
+                    16, 0, 16, 16 + MediaQuery.of(context).padding.bottom),
+                // Only the handle drags a group, so the token rows inside an
+                // open group keep their own drag and tap gestures.
+                buildDefaultDragHandles: false,
+                header: list.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: Text(
-                          'Organize tokens into categories',
-                          textAlign: TextAlign.center,
+                          'No groups in ${profile.name} yet. Add one to '
+                          'organize its tokens into categories.',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color:
-                                theme.colorScheme.onSurface.withAlpha(80),
+                            color: theme.colorScheme.onSurface.withAlpha(120),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ReorderableListView.builder(
-                  padding: EdgeInsets.fromLTRB(
-                      16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
-                  itemCount: list.length,
-                  onReorder: (old, newIdx) =>
-                      _reorderGroups(ref, list, old, newIdx),
-                  itemBuilder: (context, index) {
-                    final g = list[index];
-                    return Card(
-                      key: ValueKey(g.id),
-                      child: ListTile(
-                        leading: groupIcon(g.iconName,
-                            size: 24, color: theme.colorScheme.primary),
-                        title: Text(g.name),
-                        trailing: PopupMenuButton(
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(
-                                value: 'edit', child: Text('Rename')),
-                            const PopupMenuItem(
-                                value: 'delete', child: Text('Delete')),
-                          ],
-                          onSelected: (v) {
-                            if (v == 'edit') {
-                              _showGroupDialog(context, ref, g, profileId);
-                            }
-                            if (v == 'delete') {
-                              _deleteGroup(context, ref, g);
-                            }
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      )
+                    : null,
+                // General is where ungrouped tokens live; it has no place in
+                // the group order, so it sits after the groups.
+                footer: general,
+                itemCount: list.length,
+                onReorder: (old, newIdx) =>
+                    _reorderGroups(ref, list, old, newIdx),
+                itemBuilder: (context, index) {
+                  final g = list[index];
+                  return _GroupTokens(
+                    key: ValueKey(g.id),
+                    title: g.name,
+                    icon: groupIcon(g.iconName,
+                        size: 24, color: theme.colorScheme.primary),
+                    group: g,
+                    tokens: tokensIn(g.id),
+                    tokensIn: tokensIn,
+                    groups: list,
+                    profileId: profileId,
+                    menu: PopupMenuButton(
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                            value: 'edit', child: Text('Rename')),
+                        const PopupMenuItem(
+                            value: 'delete', child: Text('Delete')),
+                      ],
+                      onSelected: (v) {
+                        if (v == 'edit') {
+                          _showGroupDialog(context, ref, g, profileId);
+                        }
+                        if (v == 'delete') {
+                          _deleteGroup(context, ref, g);
+                        }
+                      },
+                    ),
+                    dragHandle: ReorderableDragStartListener(
+                      index: index,
+                      child: Icon(Icons.drag_indicator_rounded,
+                          color: theme.colorScheme.onSurface.withAlpha(100)),
+                    ),
+                  );
+                },
               ),
+            ),
           ],
         );
       },
@@ -727,5 +749,236 @@ class _GroupTab extends ConsumerWidget {
         ),
       );
     }
+  }
+}
+
+// ─── Tokens inside a group ───
+
+/// One group on the Groups tab, opened to show its tokens. Tokens are moved
+/// by dragging: drop one on a group to put it last there, or on a token to put
+/// it right before that token, which also reorders within a group. The move
+/// button does the same for anyone who can't or won't drag.
+class _GroupTokens extends ConsumerStatefulWidget {
+  final String title;
+  final Widget icon;
+
+  /// Null for General, which holds the profile's ungrouped tokens.
+  final TokenGroup? group;
+  final List<Token> tokens;
+  final List<Token> Function(String? groupId) tokensIn;
+  final List<TokenGroup> groups;
+  final String profileId;
+  final Widget? menu;
+  final Widget? dragHandle;
+
+  const _GroupTokens({
+    super.key,
+    required this.title,
+    required this.icon,
+    this.group,
+    required this.tokens,
+    required this.tokensIn,
+    required this.groups,
+    required this.profileId,
+    this.menu,
+    this.dragHandle,
+  });
+
+  @override
+  ConsumerState<_GroupTokens> createState() => _GroupTokensState();
+}
+
+class _GroupTokensState extends ConsumerState<_GroupTokens> {
+  bool _expanded = false;
+
+  bool _isHere(Token token) => widget.tokens.any((t) => t.id == token.id);
+
+  Future<void> _move(Token token, {String? toGroupId, Token? before}) async {
+    final order = widget
+        .tokensIn(toGroupId)
+        .where((t) => t.id != token.id)
+        .toList();
+    final at = before == null
+        ? order.length
+        : order.indexWhere((t) => t.id == before.id);
+    order.insert(at < 0 ? order.length : at, token);
+
+    final repo = ref.read(tokenRepositoryProvider);
+    if (token.groupId != toGroupId) await repo.updateGroup(token.id, toGroupId);
+    await repo.updateSortOrders({
+      for (var i = 0; i < order.length; i++) order[i].id: i,
+    });
+    ref.invalidate(tokensByProfileProvider(widget.profileId));
+    ref.invalidate(tokenListProvider);
+  }
+
+  Future<void> _showMoveSheet(Token token) async {
+    final theme = Theme.of(context);
+    // The choice is wrapped in a record so General (id null) differs from a
+    // dismissed sheet (null).
+    final picked = await showModalBottomSheet<({String? id})>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        Widget option(String? id, Widget icon, String name) => ListTile(
+              leading: icon,
+              title: Text(name),
+              trailing: id == widget.group?.id
+                  ? Icon(Icons.check_rounded, color: theme.colorScheme.primary)
+                  : null,
+              onTap: () => Navigator.pop(ctx, (id: id)),
+            );
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text('Move ${token.issuer} to',
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+              for (final g in widget.groups)
+                option(
+                    g.id,
+                    groupIcon(g.iconName, color: theme.colorScheme.primary),
+                    g.name),
+              option(
+                  null,
+                  Icon(Icons.apps_rounded, color: theme.colorScheme.primary),
+                  'General'),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null && picked.id != widget.group?.id) {
+      await _move(token, toGroupId: picked.id);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final count = widget.tokens.length;
+
+    return DragTarget<Token>(
+      onWillAcceptWithDetails: (d) => !_isHere(d.data),
+      onAcceptWithDetails: (d) => _move(d.data, toGroupId: widget.group?.id),
+      builder: (context, hovering, _) => Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: hovering.isNotEmpty
+                ? theme.colorScheme.primary
+                : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Column(
+          children: [
+            ListTile(
+              leading: widget.icon,
+              title: Text(widget.title),
+              subtitle: Text(
+                hovering.isNotEmpty
+                    ? 'Drop to move here'
+                    : '$count ${count == 1 ? 'token' : 'tokens'}',
+              ),
+              onTap: () => setState(() => _expanded = !_expanded),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ?widget.menu,
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(Icons.expand_more_rounded,
+                        color: theme.colorScheme.onSurface.withAlpha(120)),
+                  ),
+                  if (widget.dragHandle != null) ...[
+                    const SizedBox(width: 4),
+                    widget.dragHandle!,
+                  ],
+                ],
+              ),
+            ),
+            if (_expanded)
+              if (widget.tokens.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Text(
+                    'Drag a token here',
+                    style: TextStyle(
+                        color: theme.colorScheme.onSurface.withAlpha(120)),
+                  ),
+                )
+              else
+                for (final token in widget.tokens) _buildToken(theme, token),
+            if (_expanded) const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToken(ThemeData theme, Token token) {
+    final row = ListTile(
+      dense: true,
+      leading: ServiceIcon(
+        issuer: token.issuer,
+        account: token.account,
+        iconPath: token.iconPath,
+        size: 32,
+      ),
+      title: Text(token.issuer.isEmpty ? token.account : token.issuer,
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: token.issuer.isEmpty
+          ? null
+          : Text(token.account, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.drive_file_move_outlined),
+            tooltip: 'Move ${token.issuer}',
+            onPressed: () => _showMoveSheet(token),
+          ),
+          Icon(Icons.drag_indicator_rounded,
+              color: theme.colorScheme.onSurface.withAlpha(100)),
+        ],
+      ),
+    );
+
+    return DragTarget<Token>(
+      onWillAcceptWithDetails: (d) => d.data.id != token.id,
+      onAcceptWithDetails: (d) =>
+          _move(d.data, toGroupId: widget.group?.id, before: token),
+      builder: (context, hovering, _) => Column(
+        children: [
+          // Where the dropped token will land: just above this one.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            height: hovering.isNotEmpty ? 3 : 0,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            color: theme.colorScheme.primary,
+          ),
+          LongPressDraggable<Token>(
+            data: token,
+            hapticFeedbackOnStart: true,
+            feedback: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(width: 280, child: row),
+            ),
+            childWhenDragging: Opacity(opacity: 0.3, child: row),
+            child: row,
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -123,30 +123,23 @@ class _TokenCardState extends State<TokenCard>
     final isExpiring = widget.token.type == OtpType.totp && _remaining <= 5;
 
     return Slidable(
-      endActionPane: ActionPane(
-        motion: const BehindMotion(),
-        extentRatio: 0.4,
-        children: [
-          if (widget.onEdit != null)
-            SlidableAction(
-              onPressed: (_) => widget.onEdit!(),
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: Colors.white,
-              icon: Icons.edit_rounded,
-              label: 'Edit',
-              borderRadius: BorderRadius.circular(16),
+      // Swiping only deletes: editing has the pencil on the card itself.
+      endActionPane: widget.onDelete == null
+          ? null
+          : ActionPane(
+              motion: const BehindMotion(),
+              extentRatio: 0.25,
+              children: [
+                SlidableAction(
+                  onPressed: (_) => widget.onDelete!(),
+                  backgroundColor: theme.colorScheme.error,
+                  foregroundColor: Colors.white,
+                  icon: Icons.delete_rounded,
+                  label: 'Delete',
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ],
             ),
-          if (widget.onDelete != null)
-            SlidableAction(
-              onPressed: (_) => widget.onDelete!(),
-              backgroundColor: theme.colorScheme.error,
-              foregroundColor: Colors.white,
-              icon: Icons.delete_rounded,
-              label: 'Delete',
-              borderRadius: BorderRadius.circular(16),
-            ),
-        ],
-      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         child: Material(

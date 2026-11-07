@@ -128,6 +128,15 @@ final groupsByProfileProvider =
   return ref.read(profileRepositoryProvider).getGroupsByProfile(profileId);
 });
 
+/// Tokens of one profile, whichever tab is active, for sorting them into
+/// groups on the Profiles & Groups screen.
+final tokensByProfileProvider =
+    FutureProvider.family<List<Token>, String>((ref, profileId) async {
+  final vault = ref.watch(vaultProvider);
+  if (vault.status != VaultStatus.unlocked) return [];
+  return ref.read(tokenRepositoryProvider).getByProfile(profileId);
+});
+
 // --- Search ---
 
 final searchQueryProvider = StateProvider<String>((ref) => '');
@@ -196,18 +205,9 @@ void saveExpandedSections(WidgetRef ref, Set<String> ids) {
   ref.read(keystoreServiceProvider).storeExpandedSections(ids);
 }
 
-/// Shortcuts shown at the top of a Home section, keyed by section id (a group
-/// id, or [AllViewSection.generalId]); each value lists group ids in order.
-final sectionShortcutsProvider =
-    StateProvider<Map<String, List<String>>>((ref) => const {});
-
-void saveSectionShortcuts(WidgetRef ref, Map<String, List<String>> shortcuts) {
-  ref.read(sectionShortcutsProvider.notifier).state = shortcuts;
-  ref.read(keystoreServiceProvider).storeSectionShortcuts(shortcuts);
-}
-
-/// Every group in every profile, whichever tab is active. Shortcuts can point
-/// across profiles, so the active-profile [groupListProvider] isn't enough.
+/// Every group in every profile, whichever tab is active. A token can be
+/// moved to any profile's category, so the active-profile [groupListProvider]
+/// isn't enough.
 final allGroupsProvider = FutureProvider<List<TokenGroup>>((ref) async {
   // Re-runs whenever the group list is invalidated, which every group edit
   // already does, so this never needs invalidating on its own.
@@ -247,7 +247,4 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
 
   container.read(expandedSectionsProvider.notifier).state =
       await keystore.getExpandedSections();
-
-  container.read(sectionShortcutsProvider.notifier).state =
-      await keystore.getSectionShortcuts();
 }

@@ -695,7 +695,6 @@ class SettingsScreen extends ConsumerWidget {
           ref.invalidate(customThemeColorsProvider);
           ref.invalidate(allViewLayoutProvider);
           ref.invalidate(expandedSectionsProvider);
-          ref.invalidate(sectionShortcutsProvider);
           deleted = true;
         },
       ),
