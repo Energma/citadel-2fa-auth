@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Citadel: outlined shield and keep with a solid keyhole</title>
+  <path d="M128 16 L224 50 V124 C224 178 186 218 128 240 C70 218 32 178 32 124 V50 Z" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linejoin="miter"/>
+  <path d="M74 88 H94 V106 H114 V88 H142 V106 H162 V88 H182 V136 C182 164 158 182 128 196 C98 182 74 164 74 136 Z" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linejoin="miter"/>
+  <path d="M128 112 A16 16 0 0 0 119 141 L114 170 H142 L137 141 A16 16 0 0 0 128 112 Z" fill="#FFFFFF"/>
+</svg>
