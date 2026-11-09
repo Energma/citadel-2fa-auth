@@ -6,6 +6,7 @@ import '../data/repositories/token_repository.dart';
 import '../data/repositories/profile_repository.dart';
 import '../platform/biometric_service.dart';
 import '../platform/keystore_service.dart';
+import 'models/all_view_layout.dart';
 import 'models/token.dart';
 import 'models/profile.dart';
 import 'models/theme_settings.dart';
@@ -127,6 +128,15 @@ final groupsByProfileProvider =
   return ref.read(profileRepositoryProvider).getGroupsByProfile(profileId);
 });
 
+/// Tokens of one profile, whichever tab is active, for sorting them into
+/// groups on the Profiles & Groups screen.
+final tokensByProfileProvider =
+    FutureProvider.family<List<Token>, String>((ref, profileId) async {
+  final vault = ref.watch(vaultProvider);
+  if (vault.status != VaultStatus.unlocked) return [];
+  return ref.read(tokenRepositoryProvider).getByProfile(profileId);
+});
+
 // --- Search ---
 
 final searchQueryProvider = StateProvider<String>((ref) => '');
@@ -170,17 +180,40 @@ final pinEnabledProvider = FutureProvider<bool>((ref) async {
 final autoLockDurationProvider = StateProvider<Duration>((ref) => const Duration(minutes: 5));
 
 final citadelThemeModeProvider =
-    StateProvider<CitadelThemeMode>((ref) => CitadelThemeMode.system);
+    StateProvider<CitadelThemeMode>((ref) => CitadelThemeMode.dark);
 
 /// Colors backing [CitadelThemeMode.custom]. Ignored in every other mode.
 final customThemeColorsProvider =
     StateProvider<CustomThemeColors>((ref) => CustomThemeColors.defaults);
 
-/// Position of the synthetic "General" section on the Home screen's "All"
-/// tab, where it pools ungrouped tokens across every profile and so can't be
-/// stored on a single profile row like [Profile.generalSortOrder]. Device-
-/// level UI preference, not vault content.
-final allViewGeneralSortOrderProvider = StateProvider<int>((ref) => -1);
+/// What the Home screen's "All" tab shows and in what order. Device-level UI
+/// preference, not vault content.
+final allViewLayoutProvider =
+    StateProvider<AllViewLayout>((ref) => const AllViewLayout());
+
+void saveAllViewLayout(WidgetRef ref, AllViewLayout layout) {
+  ref.read(allViewLayoutProvider.notifier).state = layout;
+  ref.read(keystoreServiceProvider).storeAllViewLayout(layout.toJsonString());
+}
+
+/// Home screen sections the user left open. Sections start closed, so a long
+/// list stays scannable until the user chooses otherwise.
+final expandedSectionsProvider = StateProvider<Set<String>>((ref) => const {});
+
+void saveExpandedSections(WidgetRef ref, Set<String> ids) {
+  ref.read(expandedSectionsProvider.notifier).state = ids;
+  ref.read(keystoreServiceProvider).storeExpandedSections(ids);
+}
+
+/// Every group in every profile, whichever tab is active. A token can be
+/// moved to any profile's category, so the active-profile [groupListProvider]
+/// isn't enough.
+final allGroupsProvider = FutureProvider<List<TokenGroup>>((ref) async {
+  // Re-runs whenever the group list is invalidated, which every group edit
+  // already does, so this never needs invalidating on its own.
+  await ref.watch(groupListProvider.future);
+  return ref.read(profileRepositoryProvider).getAllGroups();
+});
 
 /// Load persisted settings from keystore on app start.
 Future<void> loadPersistedSettings(ProviderContainer container) async {
@@ -192,9 +225,9 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
   final themeStr = await keystore.getThemeMode();
   container.read(citadelThemeModeProvider.notifier).state = switch (themeStr) {
     'light' => CitadelThemeMode.light,
-    'dark' => CitadelThemeMode.dark,
+    'system' => CitadelThemeMode.system,
     'custom' => CitadelThemeMode.custom,
-    _ => CitadelThemeMode.system,
+    _ => CitadelThemeMode.dark,
   };
 
   final background = await keystore.getCustomBackgroundColor();
@@ -209,7 +242,9 @@ Future<void> loadPersistedSettings(ProviderContainer container) async {
     );
   }
 
-  final allViewGeneralOrder = await keystore.getAllViewGeneralSortOrder();
-  container.read(allViewGeneralSortOrderProvider.notifier).state =
-      allViewGeneralOrder;
+  container.read(allViewLayoutProvider.notifier).state =
+      AllViewLayout.fromJsonString(await keystore.getAllViewLayout());
+
+  container.read(expandedSectionsProvider.notifier).state =
+      await keystore.getExpandedSections();
 }

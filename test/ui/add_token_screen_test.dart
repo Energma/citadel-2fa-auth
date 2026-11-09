@@ -8,6 +8,7 @@ import 'package:citadel_auth/core/providers.dart';
 import 'package:citadel_auth/data/database/vault_database.dart';
 import 'package:citadel_auth/data/repositories/token_repository.dart';
 import 'package:citadel_auth/ui/screens/add_token_screen.dart';
+import 'package:citadel_auth/ui/widgets/service_icon.dart';
 
 /// Records add/update calls so we can assert exactly what the screen persists,
 /// without a real SQLCipher database (which needs a device/plugin and can't
@@ -73,6 +74,8 @@ Future<void> _pumpScreen(
         tokenRepositoryProvider.overrideWithValue(repo),
         profileListProvider.overrideWith((ref) async => profiles),
         groupListProvider.overrideWith((ref) async => groups),
+        groupsByProfileProvider.overrideWith((ref, profileId) async =>
+            groups.where((g) => g.profileId == profileId).toList()),
       ],
       child: MaterialApp(
         home: Builder(
@@ -191,19 +194,14 @@ void main() {
           find.widgetWithText(TextField, 'Account *'), 'renamed@test.com');
       await tester.pump();
 
-      // Profile: Work -> None.
-      await tester.ensureVisible(find.text('Work'));
-      await tester.tap(find.text('Work'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('None').last);
+      // Profile: Work -> None, one tap on its chip.
+      expect(find.widgetWithText(ChoiceChip, 'Main'), findsOneWidget);
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'None'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'None'));
       await tester.pumpAndSettle();
 
-      // Group: Main -> None.
-      await tester.ensureVisible(find.text('Main'));
-      await tester.tap(find.text('Main'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('None').last);
-      await tester.pumpAndSettle();
+      // A group can't exist without its profile, so it goes too.
+      expect(find.text('Main'), findsNothing);
 
       await tester.ensureVisible(find.text('Save Changes'));
       await tester.tap(find.text('Save Changes'));
@@ -227,6 +225,90 @@ void main() {
 
       // Saving pops back to the host page.
       expect(find.text('open'), findsOneWidget);
+    });
+
+    Future<void> save(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Save Changes'));
+      await tester.tap(find.text('Save Changes'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('moving to another profile drops the old profile\'s group',
+        (tester) async {
+      await _pumpScreen(tester,
+          repo: repo,
+          editToken: _editableToken(),
+          profiles: [
+            ...profiles,
+            Profile(id: 'p2', name: 'Home', colorValue: 0xFF06B6D4),
+          ],
+          groups: [
+            ...groups,
+            TokenGroup(id: 'g2', profileId: 'p2', name: 'Family'),
+          ]);
+
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Home'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Home'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Main'), findsNothing);
+
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Family'));
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Family'));
+      await tester.pumpAndSettle();
+      await save(tester);
+
+      expect(repo.updated!.profileId, 'p2');
+      expect(repo.updated!.groupId, 'g2');
+    });
+
+    testWidgets('the chosen icon is saved',
+        (tester) async {
+      await _pumpScreen(tester,
+          repo: repo,
+          editToken: _editableToken(),
+          profiles: profiles,
+          groups: groups);
+
+      await tester.tap(find.text('Change icon'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Search services'), 'slack');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Slack'));
+      await tester.pumpAndSettle();
+      await save(tester);
+      expect(repo.updated!.iconPath, ServiceIcon.iconForService('slack'));
+    });
+
+    testWidgets('Automatic clears a previously chosen icon', (tester) async {
+      final original = _editableToken().copyWith(
+          iconPath: ServiceIcon.iconForEmoji('🏦'));
+      await _pumpScreen(tester,
+          repo: repo, editToken: original, profiles: profiles, groups: groups);
+
+      await tester.tap(find.text('Change icon'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Automatic'));
+      await tester.pumpAndSettle();
+      await save(tester);
+      expect(repo.updated!.iconPath, isNull);
+    });
+
+    testWidgets('dismissing the picker keeps the current icon', (tester) async {
+      final chosen = ServiceIcon.iconForEmoji('🏦');
+      await _pumpScreen(tester,
+          repo: repo,
+          editToken: _editableToken().copyWith(iconPath: chosen),
+          profiles: profiles,
+          groups: groups);
+
+      await tester.tap(find.text('Change icon'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      await save(tester);
+      expect(repo.updated!.iconPath, chosen);
     });
   });
 

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:citadel_auth/core/models/all_view_layout.dart';
 import 'package:citadel_auth/core/models/theme_settings.dart';
 import 'package:citadel_auth/core/providers.dart';
 import 'package:citadel_auth/data/database/vault_database.dart';
@@ -122,13 +123,15 @@ void main() {
     // too — deleting the vault should forget these as well.
     container.read(autoLockDurationProvider.notifier).state =
         const Duration(minutes: 30);
-    container.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.dark;
+    container.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.light;
     container.read(customThemeColorsProvider.notifier).state = const CustomThemeColors(
       background: Colors.red,
       text: Colors.red,
       element: Colors.red,
     );
-    container.read(allViewGeneralSortOrderProvider.notifier).state = 3;
+    container.read(allViewLayoutProvider.notifier).state =
+        const AllViewLayout(hidden: {'some-group'});
+    container.read(expandedSectionsProvider.notifier).state = {'some-group'};
 
     // Phone-sized surface — the default 800x600 test window cuts off the
     // "Danger Zone" section, which sits far down the settings list.
@@ -172,9 +175,10 @@ void main() {
     // them too, the next account would silently inherit the old one's
     // auto-lock timeout, theme, accent color, and Home-screen sort order.
     expect(container.read(autoLockDurationProvider), const Duration(minutes: 5));
-    expect(container.read(citadelThemeModeProvider), CitadelThemeMode.system);
+    expect(container.read(citadelThemeModeProvider), CitadelThemeMode.dark);
     expect(container.read(customThemeColorsProvider).element, Palette.primary);
-    expect(container.read(allViewGeneralSortOrderProvider), -1);
+    expect(container.read(allViewLayoutProvider).hidden, isEmpty);
+    expect(container.read(expandedSectionsProvider), isEmpty);
 
     // Drain VaultDeletedScreen's message/logo timers (1400ms each) so none
     // are left pending when the test tears down.

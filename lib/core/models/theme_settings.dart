@@ -26,6 +26,15 @@ class CustomThemeColors {
     element: Palette.primary,
   );
 
+  /// The three roles as [scheme] renders them right now, so the Personal Theme
+  /// editor can start from what's on screen when Light/Dark is active — editing
+  /// one color then keeps the other two instead of jumping to [defaults].
+  factory CustomThemeColors.fromScheme(ColorScheme scheme) => CustomThemeColors(
+        background: scheme.surface,
+        text: scheme.onSurface,
+        element: scheme.primary,
+      );
+
   CustomThemeColors copyWith({Color? background, Color? text, Color? element}) {
     return CustomThemeColors(
       background: background ?? this.background,

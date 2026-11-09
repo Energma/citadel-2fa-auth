@@ -62,7 +62,7 @@ Being precise here matters more than sounding impressive:
 
 ### Prerequisites
 - [Flutter](https://flutter.dev/) 3.41+ (Dart SDK `^3.11.1`)
-- [FVM](https://fvm.app/) — the project's Flutter version is managed through FVM (currently tracking the `stable` channel)
+- [FVM](https://fvm.app/) — the project's Flutter version is managed through FVM (pinned in `.fvmrc`)
 - Android SDK
 
 ### Setup

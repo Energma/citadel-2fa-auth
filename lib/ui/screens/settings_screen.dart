@@ -12,6 +12,7 @@ import '../../core/crypto/import_export.dart';
 import '../../core/crypto/vault_encryption.dart';
 import '../../ui/theme/app_theme.dart';
 import '../../ui/theme/palette.dart';
+import '../widgets/citadel_logo.dart';
 import '../widgets/master_password_dialog.dart';
 import 'pin_setup_screen.dart';
 import 'vault_deleted_screen.dart';
@@ -24,7 +25,6 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final citadelThemeMode = ref.watch(citadelThemeModeProvider);
-    final customColors = ref.watch(customThemeColorsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -48,7 +48,9 @@ class SettingsScreen extends ConsumerWidget {
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                color: customColors.element,
+                // The active element color, not the stored Custom one, which
+                // would show a stale color whenever Light/Dark/System is active.
+                color: theme.colorScheme.primary,
                 shape: BoxShape.circle,
                 border: Border.all(color: theme.dividerColor),
               ),
@@ -91,11 +93,7 @@ class SettingsScreen extends ConsumerWidget {
 
           _sectionHeader(theme, 'About'),
           ListTile(
-            leading: Image.asset(
-              'assets/logo/citadel-logo.png',
-              width: 24,
-              height: 24,
-            ),
+            leading: CitadelLogo(size: 24),
             title: const Text('Citadel Auth'),
             subtitle: Text(
               ref.watch(appVersionProvider).maybeWhen(
@@ -232,7 +230,8 @@ class SettingsScreen extends ConsumerWidget {
           Icon(icon, size: 20),
           const SizedBox(width: 12),
           Expanded(child: Text(label)),
-          if (mode == current) const Icon(Icons.check, size: 20, color: Palette.primary),
+          if (mode == current)
+            Icon(Icons.check, size: 20, color: Theme.of(ctx).colorScheme.primary),
         ],
       ),
     );
@@ -691,7 +690,8 @@ class SettingsScreen extends ConsumerWidget {
           ref.invalidate(autoLockDurationProvider);
           ref.invalidate(citadelThemeModeProvider);
           ref.invalidate(customThemeColorsProvider);
-          ref.invalidate(allViewGeneralSortOrderProvider);
+          ref.invalidate(allViewLayoutProvider);
+          ref.invalidate(expandedSectionsProvider);
           deleted = true;
         },
       ),
@@ -1280,10 +1280,10 @@ class _CustomThemeDialogState extends ConsumerState<_CustomThemeDialog> {
   }
 
   void _reset() {
-    ref.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.system;
+    ref.read(citadelThemeModeProvider.notifier).state = CitadelThemeMode.dark;
     ref.read(customThemeColorsProvider.notifier).state = CustomThemeColors.defaults;
     final keystore = ref.read(keystoreServiceProvider);
-    keystore.storeThemeMode('system');
+    keystore.storeThemeMode('dark');
     keystore.clearCustomBackgroundColor();
     keystore.clearCustomTextColor();
     keystore.clearCustomElementColor();
@@ -1324,7 +1324,13 @@ class _CustomThemeDialogState extends ConsumerState<_CustomThemeDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = ref.watch(customThemeColorsProvider);
+    // Outside Custom mode the stored colors aren't what's on screen, so show the
+    // active theme's. Inside it, use the stored values rather than the theme's:
+    // MaterialApp animates theme changes, and copying a mid-animation color
+    // into the next edit would persist it.
+    final colors = ref.watch(citadelThemeModeProvider) == CitadelThemeMode.custom
+        ? ref.watch(customThemeColorsProvider)
+        : CustomThemeColors.fromScheme(theme.colorScheme);
     // The dialog's own active theme (not the device's raw OS brightness) —
     // matters when Theme is explicitly Light/Dark rather than System, where
     // the two can disagree.

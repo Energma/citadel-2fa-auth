@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/providers.dart';
 import 'pin_setup_screen.dart';
+import '../widgets/citadel_logo.dart';
 
 class SetupScreen extends ConsumerStatefulWidget {
   const SetupScreen({super.key});
@@ -257,7 +258,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Image.asset('assets/logo/citadel-logo.png', width: 72, height: 72),
+                      const CitadelLogo(size: 72),
                       const SizedBox(height: 16),
                       Text(
                         'Welcome to Citadel',
