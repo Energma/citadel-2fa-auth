@@ -1,7 +1,7 @@
 name: citadel_auth
 description: "Privacy-first 2FA authenticator. Your secrets. Your fortress. No exceptions."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.11.1
