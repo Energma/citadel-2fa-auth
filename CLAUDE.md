@@ -15,16 +15,20 @@ Always use the `./dev.sh` helper script instead of running Flutter directly:
 ./dev.sh build android     # build_runner, then build debug APK
 ./dev.sh build ios         # build_runner, then build debug iOS app (simulator)
 ./dev.sh build ios-device  # build_runner, then build unsigned release iOS app (device)
-./dev.sh build ipa         # build_runner, then export a signed .ipa
+./dev.sh build ipa         # build_runner, then export a signed .ipa (production, screenshots blocked)
+./dev.sh build ipa-test    # build_runner, then export a signed .ipa for testers (screenshots allowed)
 ./dev.sh test              # Run tests
 ./dev.sh clean             # Clean + re-get
 ./dev.sh android           # Build debug APK
 ./dev.sh ios               # Build debug iOS app (simulator)
 ./dev.sh ios-device        # Build unsigned release iOS app (device)
-./dev.sh ipa               # Export a signed .ipa
+./dev.sh ipa               # Export a signed .ipa (production, screenshots blocked)
+./dev.sh ipa-test          # Export a signed .ipa for testers (screenshots allowed)
 ```
 
 `ios-device` builds `Runner.app` unsigned (`--no-codesign`) for real iPhone hardware. `ipa` runs `flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist` — a signed App Store Connect export for bundle ID `com.energma.citadel2fa` and Energma's team (needs the Energma Apple ID signed into Xcode). See `docs/IOS_EXPORT.md` for the signing setup and verification checklist.
+
+Screenshot/recording restrictions: only `ipa` (production) keeps them. The iOS testing builds — `ios`, `ios-device` and `ipa-test` — pass `config/demo.json`, which lifts them. Never ship an `ipa-test` build to the App Store.
 
 The project uses FVM — all Flutter commands go through `fvm flutter`.
 

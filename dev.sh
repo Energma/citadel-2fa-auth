@@ -5,9 +5,12 @@ set -euo pipefail
 flutter() { fvm flutter "$@"; }
 
 android_build() { flutter build apk --debug; }
-ios_build() { flutter build ios --simulator --debug; }
-ios_device_build() { flutter build ios --release --no-codesign; }
+# iOS testing builds (simulator, device, ipa-test) use config/demo.json so
+# screenshots and screen recording work. Only `ipa` is production-locked.
+ios_build() { flutter build ios --simulator --debug --dart-define-from-file=config/demo.json; }
+ios_device_build() { flutter build ios --release --no-codesign --dart-define-from-file=config/demo.json; }
 ipa_build() { flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist; }
+ipa_test_build() { flutter build ipa --dart-define-from-file=config/demo.json --export-options-plist=ios/ExportOptions.plist; }
 
 case "${1:-}" in
   start)
@@ -31,9 +34,12 @@ case "${1:-}" in
       ipa)
         ipa_build
         ;;
+      ipa-test)
+        ipa_test_build
+        ;;
       "") ;;
       *)
-        echo "Usage: ./dev.sh build [android|ios|ios-device|ipa]"
+        echo "Usage: ./dev.sh build [android|ios|ios-device|ipa|ipa-test]"
         exit 1
         ;;
     esac
@@ -57,8 +63,11 @@ case "${1:-}" in
   ipa)
     ipa_build
     ;;
+  ipa-test)
+    ipa_test_build
+    ;;
   *)
-    echo "Usage: ./dev.sh {start|get|build [android|ios|ios-device|ipa]|test|clean|android|ios|ios-device|ipa}"
+    echo "Usage: ./dev.sh {start|get|build [android|ios|ios-device|ipa|ipa-test]|test|clean|android|ios|ios-device|ipa|ipa-test}"
     exit 1
     ;;
 esac
