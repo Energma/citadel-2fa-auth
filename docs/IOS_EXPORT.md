@@ -21,6 +21,7 @@ Updated for `EI-51` (signed production build). Earlier work: `EI-44` / `EI-45`.
 | Export method | `app-store-connect` |
 | Signing | Automatic (Xcode manages certificate + provisioning profile) |
 | Security flags | `config/prod.json` — screenshots and screen recording blocked, app-switcher snapshot hidden |
+| Testing builds (EI-57) | `ios`, `ios-device` and `ipa-test` use `config/demo.json` — screenshots and recordings allowed. Only `ipa` is restricted. |
 
 `./dev.sh ipa` / `./dev.sh build ipa` runs `flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist` and writes `build/ios/ipa/*.ipa`. Everything else matches the dev build.
 
@@ -30,11 +31,22 @@ Updated for `EI-51` (signed production build). Earlier work: `EI-44` / `EI-45`.
 3. For uploads, create an app record with this bundle ID in App Store Connect.
 4. Run `./dev.sh ipa`, then upload the `.ipa` via Transporter or `xcrun altool`.
 
+### Testing vs production builds (EI-57)
+
+| Command | Config | Screenshots / recording |
+|---|---|---|
+| `./dev.sh ios` (simulator) | `demo.json` | allowed |
+| `./dev.sh ios-device` (unsigned) | `demo.json` | allowed |
+| `./dev.sh ipa-test` (signed, for TestFlight testers) | `demo.json` | allowed |
+| `./dev.sh ipa` (signed, App Store) | `prod.json` | blocked, app-switcher snapshot hidden |
+
+Upload only `ipa` output to the App Store. `ipa-test` builds are for internal testing. `test/core/config/build_config_test.dart` fails if `ipa` stops using `prod.json` or `prod.json` loosens.
+
 The old bundle ID was never shipped, so there is no upgrade path to preserve. Any dev build with the old ID installs as a separate app.
 
 ## 📱 Must verify on a real device
 - [ ] Install via TestFlight (or Xcode) — app launches without crashing.
-- [ ] Screenshots are blocked/blacked out, screen recording shows no app content, and the app-switcher thumbnail is hidden.
+- [ ] Production `ipa` build: screenshots are blocked/blacked out, screen recording shows no app content, and the app-switcher thumbnail is hidden.
 - [ ] Core Citadel flows work: add a token (QR + manual entry), generate TOTP/HOTP codes, biometric/PIN unlock, encrypted backup import/export.
 - [ ] No platform-specific crashes (watch for `local_auth`/`flutter_secure_storage` iOS-only code paths).
 
