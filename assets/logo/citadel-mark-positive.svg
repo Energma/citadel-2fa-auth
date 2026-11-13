@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <title>Citadel: outlined shield and keep with a solid keyhole</title>
-  <path d="M128 16 L224 50 V124 C224 178 186 218 128 240 C70 218 32 178 32 124 V50 Z" fill="none" stroke="#000000" stroke-width="10" stroke-linejoin="miter"/>
-  <path d="M74 88 H94 V106 H114 V88 H142 V106 H162 V88 H182 V136 C182 164 158 182 128 196 C98 182 74 164 74 136 Z" fill="none" stroke="#000000" stroke-width="10" stroke-linejoin="miter"/>
-  <path d="M128 112 A16 16 0 0 0 119 141 L114 170 H142 L137 141 A16 16 0 0 0 128 112 Z" fill="#000000"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="133 133 758 758">
+  <title>Citadel: hexagon enclosing a keep with an arched gate</title>
+  <path fill="#000000" fill-rule="evenodd" d="M512 153 L822 332 V691 L512 870 L202 691 V332 Z M512 236 L272 373 V650 L512 787 L752 650 V373 Z"/>
+  <path fill="#000000" d="M371 397 H429 V441 H480 V397 H544 V441 H595 V397 H653 V665 H576 V588 A64 64 0 0 0 448 588 V665 H371 Z"/>
 </svg>

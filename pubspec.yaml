@@ -68,15 +68,14 @@ flutter:
     - assets/logo/
 
 # Regenerate with `dart run flutter_launcher_icons` after changing the source
-# images, which are rendered from assets/logo/citadel-mark-negative.svg. The icon
-# is white lines on black: launchers don't allow a see-through icon (iOS rejects
-# alpha channels, Android always fills the adaptive background), so black is the
-# closest match to the mark's transparent in-app look.
+# images, which come from the hexagon-and-keep logo (assets/logo/citadel-mark-*.svg).
+# The iOS icon is the black mark on white (iOS rejects alpha channels). The
+# Android icon still uses the old mark; EI-58 only updated iOS.
 flutter_launcher_icons:
   image_path: assets/logo/citadel-icon.png
   android: true
   ios: true
   remove_alpha_ios: true
-  background_color_ios: "#000000"
+  background_color_ios: "#FFFFFF"
   adaptive_icon_background: "#000000"
   adaptive_icon_foreground: assets/logo/citadel-icon-foreground.png
