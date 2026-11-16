@@ -69,13 +69,13 @@ flutter:
 
 # Regenerate with `dart run flutter_launcher_icons` after changing the source
 # images, which come from the hexagon-and-keep logo (assets/logo/citadel-mark-*.svg).
-# The iOS icon is the black mark on white (iOS rejects alpha channels). The
-# Android icon still uses the old mark; EI-58 only updated iOS.
+# Both platforms show the black mark on white (iOS rejects alpha channels;
+# Android's adaptive foreground is the same mark on a transparent canvas).
 flutter_launcher_icons:
   image_path: assets/logo/citadel-icon.png
   android: true
   ios: true
   remove_alpha_ios: true
   background_color_ios: "#FFFFFF"
-  adaptive_icon_background: "#000000"
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: assets/logo/citadel-icon-foreground.png
