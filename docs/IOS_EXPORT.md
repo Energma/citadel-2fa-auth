@@ -23,7 +23,7 @@ Updated for `EI-51` (signed production build). Earlier work: `EI-44` / `EI-45`.
 | Security flags | `config/prod.json` — screenshots and screen recording blocked, app-switcher snapshot hidden |
 | Testing builds (EI-57) | `ios`, `ios-device` and `ipa-test` use `config/demo.json` — screenshots and recordings allowed. Only `ipa` is restricted. |
 
-`./dev.sh ipa` / `./dev.sh build ipa` runs `flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist` and writes `build/ios/ipa/*.ipa`. Everything else matches the dev build.
+`./dev.sh ipa` / `./dev.sh build ipa` runs `flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist` and writes `build/ios/ipa/citadel-auth.ipa` (`./dev.sh ipa-test` writes `build/ios/ipa/citadel_auth test.ipa`). Everything else matches the dev build.
 
 ### One-time setup
 1. In Xcode → Settings → Accounts, sign in with the Energma Apple Developer account (the account must have a role that can create certificates and profiles).
