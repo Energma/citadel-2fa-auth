@@ -13,6 +13,7 @@ Always use the `./dev.sh` helper script instead of running Flutter directly:
 ./dev.sh get               # pub get
 ./dev.sh build             # build_runner code generation
 ./dev.sh build android     # build_runner, then build debug APK
+./dev.sh build aab         # build_runner, then build the release-signed Play Store bundle (production)
 ./dev.sh build ios         # build_runner, then build debug iOS app (simulator)
 ./dev.sh build ios-device  # build_runner, then build unsigned release iOS app (device)
 ./dev.sh build ipa         # build_runner, then export a signed .ipa (production, screenshots blocked)
@@ -20,11 +21,14 @@ Always use the `./dev.sh` helper script instead of running Flutter directly:
 ./dev.sh test              # Run tests
 ./dev.sh clean             # Clean + re-get
 ./dev.sh android           # Build debug APK
+./dev.sh aab               # Build the release-signed Play Store bundle (production)
 ./dev.sh ios               # Build debug iOS app (simulator)
 ./dev.sh ios-device        # Build unsigned release iOS app (device)
 ./dev.sh ipa               # Export a signed .ipa (production, screenshots blocked)
 ./dev.sh ipa-test          # Export a signed .ipa for testers (screenshots allowed)
 ```
+
+`aab` runs `flutter build appbundle --release --dart-define-from-file=config/prod.json` — the Play Store upload. It is signed with the upload key referenced by `android/key.properties` (gitignored; keystore lives outside the repo). Play accepts only `.aab`, and the build number in `pubspec.yaml` must exceed every build already uploaded.
 
 `ios-device` builds `Runner.app` unsigned (`--no-codesign`) for real iPhone hardware. `ipa` runs `flutter build ipa --dart-define-from-file=config/prod.json --export-options-plist=ios/ExportOptions.plist` — a signed App Store Connect export for bundle ID `com.energma.citadel2fa` and Energma's team (needs the Energma Apple ID signed into Xcode). See `docs/IOS_EXPORT.md` for the signing setup and verification checklist.
 

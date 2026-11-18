@@ -28,9 +28,10 @@ Status as of 2026-08-20. Refreshed after the applicationId rename and 1.0.0 vers
 
 ## 🔧 Build the upload artifact
 ```bash
-fvm flutter build appbundle   # produces app-release.aab (~61 MB; per-ABI split via .aab)
+./dev.sh aab   # release appbundle with config/prod.json → build/app/outputs/bundle/release/app-release.aab (~76 MB)
 ```
-Upload the **.aab** (not the universal APK).
+Upload the **.aab** (not the universal APK). Bump the `+N` build number in `pubspec.yaml` first: Play rejects
+any versionCode it has already seen.
 
 ## 📱 Must verify on a real device before submitting
 - [ ] **QR scanning works offline** — we stripped INTERNET; the bundled ML Kit model should scan without network. Confirm on a device with no connectivity.
@@ -56,3 +57,13 @@ Upload the **.aab** (not the universal APK).
 
 ## 🔑 Keystore — back this up offline
 `~/citadel-release.jks` + its password are the ONLY way to publish updates. If lost, you can never update this app on Play again. Store both in a password manager / offline backup.
+
+Play App Signing is on: Google re-signs what users install, and our key is only the **upload key**. A lost
+upload key can be replaced by a reset in Play Console (Setup → App integrity). Export the new key's public cert with
+`keytool -export -rfc -alias citadel -keystore ~/citadel-release.jks -file upload_certificate.pem` and submit that.
+
+| Certificate | SHA-256 | Notes |
+|---|---|---|
+| Upload key, current (`~/citadel-release.jks`, created 2026-11-16) | `46:A2:FC:1A:09:E0:AC:E9:CD:2B:77:33:13:97:00:51:6B:FF:5D:F4:08:1B:93:83:65:59:23:4B:F4:C2:44:07` | Submitted for upload-key reset 2026-11-18; signs 1.0.2+5 onward |
+| Upload key, previous (created 2026-08-20) | `09:8C:29:3A:90:4D:E5:C5:49:0F:7C:B6:C6:D9:F4:70:AD:C8:2E:19:FE:FF:54:AD:D9:D0:2B:09:79:5C:10:A6` | Private key not found; replaced by the reset |
+| Google app-signing key (`deployment_cert.der`) | `E1:D3:49:4C:1F:7B:65:10:99:5F:1A:05:8E:45:B0:7C:9E:AB:C4:98:FC:14:0B:43:35:B5:EA:85:04:E2:D4:AB` | What installed apps are signed with |

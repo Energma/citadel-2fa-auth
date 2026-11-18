@@ -4,7 +4,7 @@
 
 Citadel Auth is an offline-first two-factor authentication app built with Flutter. There are no accounts, no cloud sync, and no telemetry. The Android release build ships with the `INTERNET` permission removed, so on Android the app is structurally incapable of making a network request. The only network-touching code path in the app — fetching a service's favicon for its token icon — is inert on Android for that reason; on iOS, which has no equivalent permission mechanism, that request carries only the issuer's domain name (e.g. `github.com`), never a secret or account value.
 
-Current version: `1.0.1+4`
+Current version: `1.0.2+5`
 
 ## Features
 
