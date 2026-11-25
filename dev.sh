@@ -5,6 +5,8 @@ set -euo pipefail
 flutter() { fvm flutter "$@"; }
 
 android_build() { flutter build apk --debug; }
+# Play Store production bundle. Play only takes .aab; signing comes from android/key.properties (gitignored).
+aab_build() { flutter build appbundle --release --dart-define-from-file=config/prod.json; }
 # iOS testing builds (simulator, device, ipa-test) use config/demo.json so
 # screenshots and screen recording work. Only `ipa` is production-locked.
 ios_build() { flutter build ios --simulator --debug --dart-define-from-file=config/demo.json; }
@@ -45,6 +47,9 @@ case "${1:-}" in
       android)
         android_build
         ;;
+      aab)
+        aab_build
+        ;;
       ios)
         ios_build
         ;;
@@ -59,7 +64,7 @@ case "${1:-}" in
         ;;
       "") ;;
       *)
-        echo "Usage: ./dev.sh build [android|ios|ios-device|ipa|ipa-test]"
+        echo "Usage: ./dev.sh build [android|aab|ios|ios-device|ipa|ipa-test]"
         exit 1
         ;;
     esac
@@ -74,6 +79,9 @@ case "${1:-}" in
   android)
     android_build
     ;;
+  aab)
+    aab_build
+    ;;
   ios)
     ios_build
     ;;
@@ -87,7 +95,7 @@ case "${1:-}" in
     ipa_test_build
     ;;
   *)
-    echo "Usage: ./dev.sh {start|get|build [android|ios|ios-device|ipa|ipa-test]|test|clean|android|ios|ios-device|ipa|ipa-test}"
+    echo "Usage: ./dev.sh {start|get|build [android|aab|ios|ios-device|ipa|ipa-test]|test|clean|android|aab|ios|ios-device|ipa|ipa-test}"
     exit 1
     ;;
 esac
